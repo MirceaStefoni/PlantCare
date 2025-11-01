@@ -1,0 +1,66 @@
+package com.example.plantcare.data.local
+
+import androidx.room.ColumnInfo
+import androidx.room.Entity
+import androidx.room.ForeignKey
+import androidx.room.Index
+import androidx.room.PrimaryKey
+
+@Entity(tableName = "users")
+data class UserEntity(
+    @PrimaryKey val id: String,
+    val email: String,
+    val display_name: String?,
+    val profile_photo_url: String?,
+    val created_at: Long,
+    val updated_at: Long
+)
+
+@Entity(
+    tableName = "plants",
+    indices = [Index("user_id")],
+    foreignKeys = [ForeignKey(
+        entity = UserEntity::class,
+        parentColumns = ["id"],
+        childColumns = ["user_id"],
+        onDelete = ForeignKey.CASCADE
+    )]
+)
+data class PlantEntity(
+    @PrimaryKey val id: String,
+    @ColumnInfo(name = "user_id") val userId: String,
+    val common_name: String,
+    val scientific_name: String?,
+    val user_photo_url: String,
+    val reference_photo_url: String?,
+    val added_method: String,
+    val created_at: Long,
+    val updated_at: Long
+)
+
+@Entity(
+    tableName = "care_instructions",
+    indices = [Index("plant_id")],
+    foreignKeys = [ForeignKey(
+        entity = PlantEntity::class,
+        parentColumns = ["id"],
+        childColumns = ["plant_id"],
+        onDelete = ForeignKey.CASCADE
+    )]
+)
+data class CareInstructionsEntity(
+    @PrimaryKey val id: String,
+    @ColumnInfo(name = "plant_id") val plantId: String,
+    val watering_info: String?,
+    val light_info: String?,
+    val temperature_info: String?,
+    val humidity_info: String?,
+    val soil_info: String?,
+    val fertilization_info: String?,
+    val pruning_info: String?,
+    val common_issues: String?,
+    val seasonal_tips: String?,
+    val fetched_at: Long
+)
+
+
