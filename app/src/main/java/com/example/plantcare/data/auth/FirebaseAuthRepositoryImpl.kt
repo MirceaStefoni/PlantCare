@@ -1,0 +1,61 @@
+package com.example.plantcare.data.auth
+
+import com.example.plantcare.data.local.AppDatabase
+import com.example.plantcare.data.session.SessionManager
+import com.example.plantcare.domain.model.AuthSession
+import com.example.plantcare.domain.model.User
+import com.example.plantcare.domain.repository.AuthRepository
+import kotlinx.coroutines.flow.Flow
+import com.google.android.gms.auth.api.signin.GoogleSignInClient
+
+class FirebaseAuthRepositoryImpl(
+    private val db: AppDatabase,
+    private val service: FirebaseAuthService,
+    private val sessionManager: SessionManager,
+    private val googleClient: GoogleSignInClient
+) : AuthRepository {
+    override val sessionFlow: Flow<AuthSession?> = sessionManager.sessionFlow
+
+    override suspend fun signUpWithEmail(email: String, password: String, displayName: String): Result<AuthSession> {
+        val res = service.signUp(email, password, displayName)
+        return res.onSuccess { s -> sessionManager.saveSession(s, remember = true) }
+    }
+
+    override suspend fun signInWithEmail(email: String, password: String, rememberMe: Boolean): Result<AuthSession> {
+        val res = service.signIn(email, password)
+        return res.onSuccess { s -> sessionManager.saveSession(s, remember = rememberMe) }
+    }
+
+    override suspend fun sendPasswordReset(email: String): Result<Unit> = service.sendPasswordReset(email)
+
+    override suspend fun signInWithGoogle(idToken: String, rememberMe: Boolean): Result<AuthSession> {
+        val res = service.signInWithGoogle(idToken)
+        return res.onSuccess { s -> sessionManager.saveSession(s, remember = rememberMe) }
+    }
+
+    override suspend fun refreshTokens(): Result<AuthSession> {
+        val res = service.refresh()
+        return res.onSuccess { s -> sessionManager.saveSession(s, remember = true) }
+    }
+
+    override suspend fun logout(): Result<Unit> {
+        service.signOut()
+        try { googleClient.signOut() } catch (_: Exception) {}
+        sessionManager.clearSession()
+        return Result.success(Unit)
+    }
+
+    override suspend fun updateProfile(displayName: String?, profilePhotoLocalPath: String?): Result<User> =
+        service.updateProfile(displayName, profilePhotoLocalPath)
+
+    override suspend fun deleteAccount(): Result<Unit> {
+        val res = service.deleteAccount()
+        if (res.isSuccess) {
+            db.clearAllTables()
+            sessionManager.clearSession()
+        }
+        return res
+    }
+}
+
+

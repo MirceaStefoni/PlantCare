@@ -17,6 +17,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.window.Dialog
 import androidx.compose.runtime.LaunchedEffect
@@ -30,8 +32,9 @@ import androidx.compose.ui.unit.dp
 
 data class PlantUi(val id: String, val name: String)
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeScreen(onOpenPlant: (String) -> Unit) {
+fun HomeScreen(onOpenPlant: (String) -> Unit, onOpenProfile: () -> Unit) {
     var plants by remember { mutableStateOf<List<PlantUi>>(emptyList()) }
     var showAdd by remember { mutableStateOf(false) }
 
@@ -40,6 +43,7 @@ fun HomeScreen(onOpenPlant: (String) -> Unit) {
     }
 
     Scaffold(
+        topBar = { TopAppBar(title = { Text("PlantCare") }, actions = { androidx.compose.material3.TextButton(onClick = onOpenProfile) { Text("Profile") } }) },
         floatingActionButton = {
             FloatingActionButton(onClick = { showAdd = true }) {
                 Icon(Icons.Default.Add, contentDescription = "Add")

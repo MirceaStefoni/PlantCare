@@ -7,6 +7,21 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 
 @Dao
+interface UserDao {
+    @Query("SELECT * FROM users WHERE email = :email LIMIT 1")
+    suspend fun findByEmail(email: String): UserEntity?
+
+    @Query("SELECT * FROM users WHERE id = :id LIMIT 1")
+    suspend fun getById(id: String): UserEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(user: UserEntity)
+
+    @Query("DELETE FROM users WHERE id = :id")
+    suspend fun deleteById(id: String)
+}
+
+@Dao
 interface PlantDao {
     @Query("SELECT * FROM plants WHERE user_id = :userId ORDER BY created_at DESC")
     suspend fun getPlants(userId: String): List<PlantEntity>
