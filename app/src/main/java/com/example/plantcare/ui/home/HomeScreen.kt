@@ -1,5 +1,7 @@
 package com.example.plantcare.ui.home
 
+import android.content.Intent
+import android.net.Uri
 import android.os.Environment
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -69,6 +71,7 @@ import java.util.concurrent.TimeUnit
 fun HomeScreen(onOpenPlant: (String) -> Unit, viewModel: HomeViewModel = hiltViewModel()) {
     val plants by viewModel.plants.collectAsState()
     var showAdd by remember { mutableStateOf(false) }
+    val context = LocalContext.current
 
     Scaffold(
         topBar = {
@@ -158,7 +161,8 @@ fun HomeScreen(onOpenPlant: (String) -> Unit, viewModel: HomeViewModel = hiltVie
             AddPlantDialog(
                 onDismiss = { showAdd = false },
                 onPickFromGallery = { uri ->
-                    viewModel.addPlantFromUri(uri.toString(), name = "New Plant", scientific = null)
+                    val persisted = importImageToAppStorage(context, uri) ?: uri
+                    viewModel.addPlantFromUri(persisted.toString(), name = "New Plant", scientific = null)
                     showAdd = false
                 },
                 onCapturePhoto = { uri ->
@@ -307,6 +311,30 @@ private fun createTempImageUri(context: android.content.Context): android.net.Ur
     val dir = context.getExternalFilesDir(Environment.DIRECTORY_PICTURES) ?: return null
     val file = File(dir, "plant_${System.currentTimeMillis()}.jpg")
     return FileProvider.getUriForFile(context, context.packageName + ".fileprovider", file)
+}
+
+private fun importImageToAppStorage(context: android.content.Context, source: Uri): Uri? {
+    try {
+        context.contentResolver.takePersistableUriPermission(
+            source,
+            Intent.FLAG_GRANT_READ_URI_PERMISSION
+        )
+    } catch (_: SecurityException) {
+        // Provider didn't grant persistable permissions; we'll copy the bytes
+    } catch (_: IllegalArgumentException) {
+        // Uri not eligible for persistable permission
+    }
+
+    val dir = context.getExternalFilesDir(Environment.DIRECTORY_PICTURES) ?: return null
+    val dest = File(dir, "plant_${System.currentTimeMillis()}.jpg")
+    return try {
+        context.contentResolver.openInputStream(source)?.use { input ->
+            dest.outputStream().use { output -> input.copyTo(output) }
+        } ?: return null
+        FileProvider.getUriForFile(context, context.packageName + ".fileprovider", dest)
+    } catch (_: Exception) {
+        null
+    }
 }
 
 private fun formatRelativeTime(timestampMs: Long): String {
