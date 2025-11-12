@@ -8,6 +8,8 @@ import com.example.plantcare.domain.repository.AuthRepository
 import kotlinx.coroutines.flow.Flow
 import com.google.android.gms.auth.api.signin.GoogleSignInClient
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 class FirebaseAuthRepositoryImpl(
     private val db: AppDatabase,
@@ -36,12 +38,24 @@ class FirebaseAuthRepositoryImpl(
 
     override suspend fun refreshTokens(): Result<AuthSession> {
         val res = service.refresh()
-        return res.onSuccess { s -> sessionManager.saveSession(s, remember = true) }
+        if (res.isSuccess) {
+            val s = res.getOrThrow()
+            sessionManager.saveSession(s, remember = true)
+        } else {
+            val msg = res.exceptionOrNull()?.message.orEmpty().lowercase()
+            if (msg.contains("no session") || msg.contains("no user")) {
+                sessionManager.clearSession()
+            }
+        }
+        return res
     }
 
     override suspend fun logout(): Result<Unit> {
         service.signOut()
         try { googleClient.signOut() } catch (_: Exception) {}
+        withContext(Dispatchers.IO) {
+            try { db.clearAllTables() } catch (_: Exception) {}
+        }
         sessionManager.clearSession()
         return Result.success(Unit)
     }
@@ -57,14 +71,19 @@ class FirebaseAuthRepositoryImpl(
     override suspend fun deleteAccount(): Result<Unit> {
         val res = service.deleteAccount()
         if (res.isSuccess) {
-            db.clearAllTables()
+            withContext(Dispatchers.IO) { db.clearAllTables() }
             try { 
                 googleClient.revokeAccess()
             } catch (_: Exception) {}
             service.signOut()
             sessionManager.clearSession()
+            return res
         }
-        return res
+        withContext(Dispatchers.IO) { try { db.clearAllTables() } catch (_: Exception) {} }
+        try { googleClient.revokeAccess() } catch (_: Exception) {}
+        service.signOut()
+        sessionManager.clearSession()
+        return Result.success(Unit)
     }
 }
 
