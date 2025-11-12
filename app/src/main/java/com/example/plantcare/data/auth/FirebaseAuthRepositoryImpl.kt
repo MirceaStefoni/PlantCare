@@ -7,6 +7,7 @@ import com.example.plantcare.domain.model.User
 import com.example.plantcare.domain.repository.AuthRepository
 import kotlinx.coroutines.flow.Flow
 import com.google.android.gms.auth.api.signin.GoogleSignInClient
+import kotlinx.coroutines.flow.first
 
 class FirebaseAuthRepositoryImpl(
     private val db: AppDatabase,
@@ -46,12 +47,21 @@ class FirebaseAuthRepositoryImpl(
     }
 
     override suspend fun updateProfile(displayName: String?, profilePhotoLocalPath: String?): Result<User> =
-        service.updateProfile(displayName, profilePhotoLocalPath)
+        service.updateProfile(displayName, profilePhotoLocalPath).onSuccess { updatedUser ->
+            val current = sessionManager.sessionFlow.first()
+            if (current != null) {
+                sessionManager.saveSession(current.copy(user = updatedUser), remember = true)
+            }
+        }
 
     override suspend fun deleteAccount(): Result<Unit> {
         val res = service.deleteAccount()
         if (res.isSuccess) {
             db.clearAllTables()
+            try { 
+                googleClient.revokeAccess()
+            } catch (_: Exception) {}
+            service.signOut()
             sessionManager.clearSession()
         }
         return res

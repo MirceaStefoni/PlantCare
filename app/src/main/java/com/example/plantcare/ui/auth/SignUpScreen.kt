@@ -66,8 +66,8 @@ fun SignUpScreen(
     vm: AuthViewModel = hiltViewModel()
 ) {
     val session by vm.session.collectAsState(initial = null)
-    val loading = vm.loading
-    val error = vm.error
+    val loading by vm.loading.collectAsState(initial = false)
+    val error by vm.error.collectAsState(initial = null)
 
     var displayName by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
@@ -85,7 +85,7 @@ fun SignUpScreen(
     val passValid = passLen && passUpper && passDigit
     val confirmValid = confirm == password && confirm.isNotEmpty()
 
-    val canSubmit = nameValid && emailValid && passValid && confirmValid && acceptedTerms && !loading.value
+    val canSubmit = nameValid && emailValid && passValid && confirmValid && acceptedTerms && !loading
 
     val strength = listOf(passLen, passUpper, passDigit).count { it } / 3f
     val strengthLabel = when {
@@ -97,6 +97,7 @@ fun SignUpScreen(
     LaunchedEffect(session) {
         if (session != null) onNavigateHome()
     }
+    LaunchedEffect(Unit) { vm.clearError() }
 
     Column(Modifier.fillMaxSize().padding(16.dp)) {
         Spacer(Modifier.height(24.dp))
@@ -111,11 +112,11 @@ fun SignUpScreen(
         Text("Start your plant care journey today", color = TextSecondary)
 
         Spacer(Modifier.height(16.dp))
-        if (error.value != null) { Text(error.value!!, color = Color.Red); Spacer(Modifier.height(8.dp)) }
+        if (error != null) { Text(error!!, color = Color.Red); Spacer(Modifier.height(8.dp)) }
 
         OutlinedTextField(
             value = displayName,
-            onValueChange = { displayName = it },
+            onValueChange = { displayName = it; vm.clearError() },
             label = { Text("Display name") },
             leadingIcon = { Icon(Icons.Default.Person, contentDescription = null, tint = TextSecondary) },
             supportingText = { Text("2-50 characters", color = TextSecondary) },
@@ -125,7 +126,7 @@ fun SignUpScreen(
         Spacer(Modifier.height(8.dp))
         OutlinedTextField(
             value = email,
-            onValueChange = { email = it },
+            onValueChange = { email = it; vm.clearError() },
             label = { Text("Email") },
             leadingIcon = { Icon(Icons.Default.Email, contentDescription = null, tint = TextSecondary) },
             modifier = Modifier.fillMaxWidth()
@@ -134,7 +135,7 @@ fun SignUpScreen(
         Spacer(Modifier.height(8.dp))
         OutlinedTextField(
             value = password,
-            onValueChange = { password = it },
+            onValueChange = { password = it; vm.clearError() },
             label = { Text("Create password") },
             leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null, tint = TextSecondary) },
             trailingIcon = {
@@ -161,7 +162,7 @@ fun SignUpScreen(
         Spacer(Modifier.height(8.dp))
         OutlinedTextField(
             value = confirm,
-            onValueChange = { confirm = it },
+            onValueChange = { confirm = it; vm.clearError() },
             label = { Text("Confirm password") },
             leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null, tint = TextSecondary) },
             trailingIcon = {
@@ -229,7 +230,7 @@ fun SignUpScreen(
             Text("Sign In", color = ForestGreen, textDecoration = TextDecoration.Underline, modifier = Modifier.clickable { onOpenSignIn() })
         }
 
-        if (loading.value) {
+        if (loading) {
             Spacer(Modifier.height(8.dp))
             CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
         }

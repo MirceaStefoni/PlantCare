@@ -79,11 +79,21 @@ fun AppNavHost(navController: NavHostController, startDestination: String) {
             PlantDetailScreen(plantId = id)
         }
         composable(Routes.PROFILE) {
-            ProfileScreen(onLogout = {
-                navController.navigate(Routes.WELCOME) { popUpTo(Routes.HOME) { inclusive = true } }
-            }, onAccountDeleted = {
-                navController.navigate(Routes.WELCOME) { popUpTo(Routes.HOME) { inclusive = true } }
-            })
+            ProfileScreen(
+                onLogout = {
+                    navController.navigate(Routes.WELCOME) { popUpTo(Routes.HOME) { inclusive = true } }
+                },
+                onAccountDeleted = {
+                    navController.navigate(Routes.WELCOME) { popUpTo(Routes.HOME) { inclusive = true } }
+                },
+                onBack = {
+                    if (!navController.popBackStack()) {
+                        navController.navigate(Routes.HOME) {
+                            popUpTo(Routes.PROFILE) { inclusive = true }
+                        }
+                    }
+                }
+            )
         }
     }
 }

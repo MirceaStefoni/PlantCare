@@ -7,6 +7,7 @@ import com.example.plantcare.domain.model.User
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.GoogleAuthProvider
+import com.google.firebase.auth.FirebaseAuthUserCollisionException
 import com.google.firebase.auth.ktx.userProfileChangeRequest
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
@@ -16,19 +17,31 @@ class FirebaseAuthService(
 ) {
     suspend fun signUp(email: String, password: String, displayName: String): Result<AuthSession> =
         suspendCancellableCoroutine { cont ->
-            auth.createUserWithEmailAndPassword(email, password).addOnCompleteListener { task ->
-                if (!task.isSuccessful) {
-                    cont.resume(Result.failure(task.exception ?: Exception("Sign up failed")))
+            auth.fetchSignInMethodsForEmail(email).addOnCompleteListener { checkTask ->
+                val methods = checkTask.result?.signInMethods ?: emptyList<String>()
+                if (methods.isNotEmpty()) {
+                    cont.resume(Result.failure(Exception("Email already in use. Try signing in or use Reset Password.")))
                     return@addOnCompleteListener
                 }
-                val user = auth.currentUser
-                if (user == null) {
-                    cont.resume(Result.failure(Exception("No user after sign up")))
-                    return@addOnCompleteListener
-                }
-                val profile = userProfileChangeRequest { this.displayName = displayName }
-                user.updateProfile(profile).addOnCompleteListener {
-                    issueToken(user, cont)
+                auth.createUserWithEmailAndPassword(email, password).addOnCompleteListener { task ->
+                    if (!task.isSuccessful) {
+                        val ex = task.exception
+                        val message = when (ex) {
+                            is FirebaseAuthUserCollisionException -> "Email already in use. Try signing in or use Reset Password."
+                            else -> ex?.message ?: "Sign up failed"
+                        }
+                        cont.resume(Result.failure(Exception(message)))
+                        return@addOnCompleteListener
+                    }
+                    val user = auth.currentUser
+                    if (user == null) {
+                        cont.resume(Result.failure(Exception("No user after sign up")))
+                        return@addOnCompleteListener
+                    }
+                    val profile = userProfileChangeRequest { this.displayName = displayName }
+                    user.updateProfile(profile).addOnCompleteListener {
+                        issueTokenWithIcon(user, cont)
+                    }
                 }
             }
         }
@@ -61,7 +74,19 @@ class FirebaseAuthService(
                     return@addOnCompleteListener
                 }
                 val user = auth.currentUser
-                if (user == null) cont.resume(Result.failure(Exception("No user"))) else issueToken(user, cont)
+                if (user == null) {
+                    cont.resume(Result.failure(Exception("No user")))
+                } else {
+                    if (user.displayName.isNullOrBlank() && !user.email.isNullOrBlank()) {
+                        val fallback = user.email!!.substringBefore('@')
+                        val req = userProfileChangeRequest { displayName = fallback }
+                        user.updateProfile(req).addOnCompleteListener {
+                            issueTokenWithIcon(user, cont)
+                        }
+                    } else {
+                        issueTokenWithIcon(user, cont)
+                    }
+                }
             }
         }
 
@@ -118,8 +143,16 @@ class FirebaseAuthService(
         }
     }
 
-    private fun FirebaseUser.toDomain(): User =
-        User(id = uid, email = email.orEmpty(), displayName = displayName, profilePhotoUrl = photoUrl?.toString())
+    private fun issueTokenWithIcon(user: FirebaseUser, cont: kotlin.coroutines.Continuation<Result<AuthSession>>) {
+        user.getIdToken(false).addOnCompleteListener { t ->
+            val token = t.result?.token ?: ""
+            val iconId = (user.uid.hashCode() % 6).let { if (it < 0) it + 6 else it }
+            cont.resume(Result.success(AuthSession(user = user.toDomain(iconId), tokens = AuthTokens(token, refreshToken = "", expiresAtEpochSeconds = 0L))))
+        }
+    }
+
+    private fun FirebaseUser.toDomain(iconId: Int = 0): User =
+        User(id = uid, email = email.orEmpty(), displayName = displayName, profilePhotoUrl = photoUrl?.toString(), profileIconId = iconId)
 }
 
 
