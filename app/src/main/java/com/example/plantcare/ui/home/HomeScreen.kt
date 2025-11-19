@@ -1,66 +1,252 @@
 package com.example.plantcare.ui.home
 
+import android.content.Intent
+import android.net.Uri
+import android.os.Environment
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.TextFields
+import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Person
 import androidx.activity.compose.BackHandler
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Button
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.Surface
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.window.Dialog
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-
-data class PlantUi(val id: String, val name: String)
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.core.content.FileProvider
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.example.plantcare.R
+import androidx.compose.ui.res.painterResource
+import com.example.plantcare.ui.components.getPlantIconById
+import com.example.plantcare.ui.theme.ForestGreen
+import com.example.plantcare.ui.theme.LightSage
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import java.io.File
+import java.util.concurrent.TimeUnit
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeScreen(onOpenPlant: (String) -> Unit, onOpenProfile: () -> Unit) {
-    var plants by remember { mutableStateOf<List<PlantUi>>(emptyList()) }
+fun HomeScreen(onOpenPlant: (String) -> Unit, onOpenProfile: () -> Unit, viewModel: HomeViewModel = hiltViewModel()) {
+    val plants by viewModel.plants.collectAsState()
     var showAdd by remember { mutableStateOf(false) }
     val context = LocalContext.current
-
-    LaunchedEffect(Unit) {
-        plants = emptyList() // placeholder; load from repository later
-    }
 
     BackHandler {
         (context as? android.app.Activity)?.moveTaskToBack(true)
     }
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("PlantCare") }, actions = { androidx.compose.material3.TextButton(onClick = onOpenProfile) { Text("Profile") } }) },
+        topBar = {
+            TopAppBar(
+                title = { 
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(LightSage.copy(alpha = 0.6f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = getPlantIconById(0),
+                                contentDescription = "PlantCare logo",
+                                tint = ForestGreen,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            "PlantCare", 
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                },
+                actions = {
+                    Surface(
+                        onClick = onOpenProfile,
+                        modifier = Modifier
+                            .padding(end = 12.dp)
+                            .size(40.dp),
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        tonalElevation = 2.dp
+                    ) {
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Icon(
+                                Icons.Outlined.Person, 
+                                contentDescription = "Profile", 
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                )
+            )
+        },
         floatingActionButton = {
-            FloatingActionButton(onClick = { showAdd = true }) {
-                Icon(Icons.Default.Add, contentDescription = "Add")
+            FloatingActionButton(
+                onClick = { showAdd = true }, 
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+                modifier = Modifier.size(64.dp)
+            ) {
+                Icon(
+                    Icons.Default.Add, 
+                    contentDescription = "Add Plant",
+                    modifier = Modifier.size(28.dp)
+                )
+            }
+        },
+        bottomBar = {
+            Surface(
+                tonalElevation = 3.dp,
+                shadowElevation = 8.dp,
+                color = MaterialTheme.colorScheme.surface
+            ) {
+                NavigationBar(
+                    containerColor = Color.Transparent,
+                    tonalElevation = 0.dp
+                ) {
+                    val navColors = androidx.compose.material3.NavigationBarItemDefaults.colors(
+                        selectedIconColor = MaterialTheme.colorScheme.onPrimary,
+                        selectedTextColor = MaterialTheme.colorScheme.primary,
+                        indicatorColor = MaterialTheme.colorScheme.primary,
+                        unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    
+                    NavigationBarItem(
+                        selected = true,
+                        onClick = { },
+                        icon = { 
+                            Icon(
+                                Icons.Outlined.Home, 
+                                contentDescription = null,
+                                modifier = Modifier.size(26.dp)
+                            ) 
+                        },
+                        label = { 
+                            Text(
+                                "Home",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold
+                            ) 
+                        },
+                        colors = navColors
+                    )
+                    NavigationBarItem(
+                        selected = false,
+                        onClick = { },
+                        icon = { 
+                            Icon(
+                                Icons.Outlined.History, 
+                                contentDescription = null,
+                                modifier = Modifier.size(26.dp)
+                            ) 
+                        },
+                        label = { 
+                            Text(
+                                "History",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Medium
+                            ) 
+                        },
+                        colors = navColors
+                    )
+                    NavigationBarItem(
+                        selected = false,
+                        onClick = { },
+                        icon = { 
+                            Icon(
+                                Icons.Outlined.Person, 
+                                contentDescription = null,
+                                modifier = Modifier.size(26.dp)
+                            ) 
+                        },
+                        label = { 
+                            Text(
+                                "Profile",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Medium
+                            ) 
+                        },
+                        colors = navColors
+                    )
+                }
             }
         }
     ) { padding ->
         if (plants.isEmpty()) {
-            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                Text("Add your first plant")
-            }
+            EmptyState(modifier = Modifier.fillMaxSize().padding(padding))
         } else {
             LazyVerticalGrid(
                 columns = GridCells.Adaptive(minSize = 160.dp),
@@ -69,24 +255,259 @@ fun HomeScreen(onOpenPlant: (String) -> Unit, onOpenProfile: () -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(16.dp),
                 horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                items(plants) { p ->
-                    Card(onClick = { onOpenPlant(p.id) }) {
-                        Text(p.name, modifier = Modifier.padding(16.dp))
-                    }
+                items(plants, key = { it.id }) { p ->
+                    PlantCard(
+                        name = p.commonName,
+                        scientific = p.scientificName ?: "",
+                        photoUrl = if (p.userPhotoUrl.isNotBlank()) p.userPhotoUrl else p.referencePhotoUrl ?: "",
+                        updatedAt = p.updatedAt,
+                        onClick = { onOpenPlant(p.id) },
+                        onDelete = { viewModel.deletePlant(p.id) }
+                    )
                 }
             }
         }
 
         if (showAdd) {
-            Dialog(onDismissRequest = { showAdd = false }) {
-                Surface {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text("Add Plant")
-                        androidx.compose.material3.Button(onClick = { /* Add by Photo */ showAdd = false }) {
-                            Text("Add by Photo")
+            AddPlantDialog(
+                onDismiss = { showAdd = false },
+                onPickFromGallery = { uri ->
+                    val persisted = importImageToAppStorage(context, uri) ?: uri
+                    viewModel.addPlantFromUri(persisted.toString(), name = "New Plant", scientific = null)
+                    showAdd = false
+                },
+                onCapturePhoto = { uri ->
+                    viewModel.addPlantFromUri(uri.toString(), name = "New Plant", scientific = null)
+                    showAdd = false
+                },
+                onAddByName = { name ->
+                    viewModel.addPlantByName(name)
+                    showAdd = false
+                }
+            )
+        }
+    }
+}
+
+@Composable
+private fun EmptyState(modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .size(140.dp)
+                .clip(CircleShape)
+                .background(LightSage),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = getPlantIconById(0),
+                contentDescription = "Plant icon",
+                tint = ForestGreen,
+                modifier = Modifier.size(64.dp)
+            )
+        }
+        Spacer(modifier = Modifier.height(24.dp))
+        Text(
+            "No Plants Yet",
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onBackground
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            "Add your first plant to get started",
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
+            textAlign = TextAlign.Center
+        )
+        Spacer(modifier = Modifier.height(32.dp))
+        Text(
+            "Tap the + button below",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.primary,
+            fontWeight = FontWeight.Medium
+        )
+    }
+}
+
+@Composable
+private fun PlantCard(
+    name: String,
+    scientific: String,
+    photoUrl: String,
+    updatedAt: Long,
+    onClick: () -> Unit,
+    onDelete: () -> Unit
+) {
+    var showConfirm by remember { mutableStateOf(false) }
+    
+    Card(
+        onClick = onClick, 
+        shape = RoundedCornerShape(20.dp),
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = 2.dp,
+            pressedElevation = 8.dp
+        ),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        )
+    ) {
+        Box(modifier = Modifier.fillMaxWidth().aspectRatio(1f)) {
+            // Plant Image
+            AsyncImage(
+                model = ImageRequest.Builder(LocalContext.current)
+                    .data(photoUrl)
+                    .crossfade(true)
+                    .build(),
+                contentDescription = name,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+            
+            // Timestamp chip - top left
+            if (updatedAt > 0) {
+                Surface(
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                    shape = RoundedCornerShape(12.dp),
+                    tonalElevation = 4.dp,
+                    modifier = Modifier
+                        .padding(12.dp)
+                        .align(Alignment.TopStart)
+                ) {
+                    Text(
+                        text = formatRelativeTime(updatedAt),
+                        color = MaterialTheme.colorScheme.primary,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                    )
+                }
+            }
+            
+            // Delete button - top right
+            Surface(
+                color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.9f),
+                shape = CircleShape,
+                modifier = Modifier
+                    .padding(12.dp)
+                    .align(Alignment.TopEnd)
+                    .size(36.dp)
+            ) {
+                IconButton(
+                    onClick = { showConfirm = true },
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    Icon(
+                        Icons.Default.Delete, 
+                        contentDescription = "Delete", 
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+            
+            // Plant name gradient overlay - bottom
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .fillMaxWidth()
+                    .background(
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                Color.Transparent, 
+                                Color.Black.copy(alpha = 0.7f),
+                                Color.Black.copy(alpha = 0.85f)
+                            )
+                        )
+                    )
+                    .padding(12.dp)
+            ) {
+                Column {
+                    Text(
+                        name, 
+                        color = Color.White, 
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleMedium,
+                        maxLines = 1, 
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    if (scientific.isNotBlank()) {
+                        Text(
+                            scientific, 
+                            color = Color.White.copy(alpha = 0.85f),
+                            fontStyle = FontStyle.Italic,
+                            style = MaterialTheme.typography.bodySmall,
+                            maxLines = 1, 
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+        }
+    }
+    
+    // Delete confirmation dialog
+    if (showConfirm) {
+        Dialog(onDismissRequest = { showConfirm = false }) {
+            Surface(
+                shape = RoundedCornerShape(24.dp),
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 8.dp
+            ) {
+                Column(
+                    Modifier.padding(24.dp), 
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Delete,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier
+                            .size(48.dp)
+                            .align(Alignment.CenterHorizontally)
+                    )
+                    Text(
+                        "Delete Plant?",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Text(
+                        "This action cannot be undone. All data for \"$name\" will be permanently removed.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        OutlinedButton(
+                            onClick = { showConfirm = false },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp)
+                        ) { 
+                            Text("Cancel", fontWeight = FontWeight.Medium) 
                         }
-                        androidx.compose.material3.OutlinedButton(onClick = { /* Add by Name */ showAdd = false }) {
-                            Text("Add by Name")
+                        Button(
+                            onClick = { 
+                                showConfirm = false
+                                onDelete() 
+                            },
+                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.error,
+                                contentColor = MaterialTheme.colorScheme.onError
+                            ),
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp)
+                        ) { 
+                            Text("Delete", fontWeight = FontWeight.Bold) 
                         }
                     }
                 }
@@ -95,4 +516,244 @@ fun HomeScreen(onOpenPlant: (String) -> Unit, onOpenProfile: () -> Unit) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AddPlantDialog(
+    onDismiss: () -> Unit,
+    onPickFromGallery: (android.net.Uri) -> Unit,
+    onCapturePhoto: (android.net.Uri) -> Unit,
+    onAddByName: (String) -> Unit
+) {
+    val context = LocalContext.current
+    var showNameInput by remember { mutableStateOf(false) }
+    var name by remember { mutableStateOf("") }
+    
+    val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) onPickFromGallery(uri)
+    }
+    val photoUri = remember { createTempImageUri(context) }
+    val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+        if (success && photoUri != null) onCapturePhoto(photoUri)
+    }
+    
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surface,
+        tonalElevation = 0.dp
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // Header
+            Text(
+                "Add New Plant",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+            
+            if (!showNameInput) {
+                // Photo options
+                Text(
+                    "Choose a method to add your plant:",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                )
+                
+                // Gallery option
+                AddPlantOptionCard(
+                    icon = getPlantIconById(0),
+                    title = "Choose from Gallery",
+                    description = "Select a photo from your device",
+                    onClick = {
+                        galleryLauncher.launch(
+                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                        )
+                    }
+                )
+                
+                // Camera option
+                AddPlantOptionCard(
+                    icon = Icons.Filled.CameraAlt,
+                    title = "Take a Photo",
+                    description = "Capture a new image with your camera",
+                    onClick = { photoUri?.let { cameraLauncher.launch(it) } }
+                )
+                
+                // Name option
+                AddPlantOptionCard(
+                    icon = Icons.Filled.TextFields,
+                    title = "Enter Plant Name",
+                    description = "Type the name if you already know it",
+                    onClick = { showNameInput = true }
+                )
+            } else {
+                // Name input
+                Text(
+                    "Enter the plant name:",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                )
+                
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Plant Name") },
+                    placeholder = { Text("e.g., Monstera Deliciosa") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        unfocusedBorderColor = MaterialTheme.colorScheme.outline
+                    )
+                )
+                
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = { 
+                            showNameInput = false
+                            name = ""
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Text("Back", fontWeight = FontWeight.Medium)
+                    }
+                    Button(
+                        onClick = { 
+                            if (name.isNotBlank()) {
+                                onAddByName(name)
+                            }
+                        },
+                        enabled = name.isNotBlank(),
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
+                        )
+                    ) {
+                        Text("Add Plant", fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+    }
+}
+
+@Composable
+private fun AddPlantOptionCard(
+    icon: ImageVector,
+    title: String,
+    description: String,
+    onClick: () -> Unit
+) {
+    Card(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.4f)
+        ),
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = 0.dp,
+            pressedElevation = 2.dp
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(56.dp)
+            ) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        icon,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
+            }
+            
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                )
+            }
+        }
+    }
+}
+
+private fun createTempImageUri(context: android.content.Context): android.net.Uri? {
+    val dir = context.getExternalFilesDir(Environment.DIRECTORY_PICTURES) ?: return null
+    val file = File(dir, "plant_${System.currentTimeMillis()}.jpg")
+    return FileProvider.getUriForFile(context, context.packageName + ".fileprovider", file)
+}
+
+private fun importImageToAppStorage(context: android.content.Context, source: Uri): Uri? {
+    try {
+        context.contentResolver.takePersistableUriPermission(
+            source,
+            Intent.FLAG_GRANT_READ_URI_PERMISSION
+        )
+    } catch (_: SecurityException) {
+        // Provider didn't grant persistable permissions; we'll copy the bytes
+    } catch (_: IllegalArgumentException) {
+        // Uri not eligible for persistable permission
+    }
+
+    val dir = context.getExternalFilesDir(Environment.DIRECTORY_PICTURES) ?: return null
+    val dest = File(dir, "plant_${System.currentTimeMillis()}.jpg")
+    return try {
+        context.contentResolver.openInputStream(source)?.use { input ->
+            dest.outputStream().use { output -> input.copyTo(output) }
+        } ?: return null
+        FileProvider.getUriForFile(context, context.packageName + ".fileprovider", dest)
+    } catch (_: Exception) {
+        null
+    }
+}
+
+private fun formatRelativeTime(timestampMs: Long): String {
+    val now = System.currentTimeMillis()
+    val diff = (now - timestampMs).coerceAtLeast(0)
+    val days = TimeUnit.MILLISECONDS.toDays(diff)
+    if (days >= 1) return "${days}d ago"
+    val hours = TimeUnit.MILLISECONDS.toHours(diff)
+    if (hours >= 1) return "${hours}h ago"
+    val minutes = TimeUnit.MILLISECONDS.toMinutes(diff)
+    if (minutes >= 1) return "${minutes}m ago"
+    return "Just now"
+}
 

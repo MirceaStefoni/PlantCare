@@ -5,6 +5,7 @@ import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface UserDao {
@@ -13,6 +14,9 @@ interface UserDao {
 
     @Query("SELECT * FROM users WHERE id = :id LIMIT 1")
     suspend fun getById(id: String): UserEntity?
+
+    @Query("SELECT COUNT(*) FROM users WHERE id = :userId")
+    suspend fun userCount(userId: String): Int
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(user: UserEntity)
@@ -26,11 +30,17 @@ interface PlantDao {
     @Query("SELECT * FROM plants WHERE user_id = :userId ORDER BY created_at DESC")
     suspend fun getPlants(userId: String): List<PlantEntity>
 
+    @Query("SELECT * FROM plants WHERE user_id = :userId ORDER BY created_at DESC")
+    fun observePlants(userId: String): Flow<List<PlantEntity>>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertPlant(plant: PlantEntity)
 
     @Delete
     suspend fun deletePlant(plant: PlantEntity)
+
+    @Query("DELETE FROM plants WHERE id = :plantId")
+    suspend fun deleteById(plantId: String)
 }
 
 @Dao
