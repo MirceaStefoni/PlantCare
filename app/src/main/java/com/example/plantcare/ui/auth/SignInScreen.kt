@@ -64,8 +64,8 @@ fun SignInScreen(
     vm: AuthViewModel = hiltViewModel()
 ) {
     val session by vm.session.collectAsState(initial = null)
-    val loading = vm.loading
-    val error = vm.error
+    val loading by vm.loading.collectAsState(initial = false)
+    val error by vm.error.collectAsState(initial = null)
 
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -91,8 +91,8 @@ fun SignInScreen(
         Text("Sign in to continue caring for your plants", color = TextSecondary, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.align(Alignment.CenterHorizontally))
 
         Spacer(Modifier.height(24.dp))
-        if (error.value != null) {
-            Text(error.value!!, color = Color.Red)
+        if (error != null) {
+            Text(error!!, color = Color.Red)
             Spacer(Modifier.height(8.dp))
         }
 
@@ -129,7 +129,7 @@ fun SignInScreen(
         Spacer(Modifier.height(16.dp))
         Button(
             onClick = { vm.signIn(email, password, rememberMe) },
-            enabled = !loading.value,
+            enabled = !loading,
             modifier = Modifier.fillMaxWidth().height(48.dp),
             colors = ButtonDefaults.buttonColors(containerColor = ForestGreen, contentColor = Color.White)
         ) { Text("Sign In") }
@@ -160,7 +160,7 @@ fun SignInScreen(
         }
         OutlinedButton(
             onClick = { googleLauncher.launch(googleClient.signInIntent) },
-            enabled = !loading.value,
+            enabled = !loading,
             modifier = Modifier.fillMaxWidth().height(48.dp)
         ) {
             val googleId = R.drawable.google_logo
@@ -180,7 +180,7 @@ fun SignInScreen(
             )
         }
 
-        if (loading.value) {
+        if (loading) {
             Spacer(Modifier.height(8.dp))
             CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
         }

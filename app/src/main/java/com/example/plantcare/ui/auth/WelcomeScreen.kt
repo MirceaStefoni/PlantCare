@@ -1,5 +1,7 @@
 package com.example.plantcare.ui.auth
 
+import android.app.Activity
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -47,6 +49,9 @@ fun WelcomeScreen(
     onGetStarted: () -> Unit,
     onSignIn: () -> Unit
 ) {
+    val context = LocalContext.current
+    BackHandler { (context as? Activity)?.moveTaskToBack(true) }
+
     Column(
         modifier = Modifier.fillMaxSize().padding(16.dp),
         verticalArrangement = Arrangement.SpaceBetween
@@ -54,7 +59,6 @@ fun WelcomeScreen(
         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxSize().weight(1f)) {
             Spacer(Modifier.height(56.dp))
             Box(Modifier.size(260.dp), contentAlignment = Alignment.Center) {
-                val context = LocalContext.current
                 val desiredId = remember { context.resources.getIdentifier("plant_welcome", "drawable", context.packageName) }
                 val painter = if (desiredId != 0) painterResource(id = desiredId) else painterResource(id = R.drawable.ic_launcher_foreground)
                 Image(

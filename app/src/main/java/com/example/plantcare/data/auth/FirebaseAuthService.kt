@@ -7,6 +7,8 @@ import com.example.plantcare.domain.model.User
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.GoogleAuthProvider
+import com.google.firebase.auth.FirebaseAuthInvalidUserException
+import com.google.firebase.auth.FirebaseAuthInvalidCredentialsException
 import com.google.firebase.auth.FirebaseAuthUserCollisionException
 import com.google.firebase.auth.ktx.userProfileChangeRequest
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -48,13 +50,22 @@ class FirebaseAuthService(
 
     suspend fun signIn(email: String, password: String): Result<AuthSession> =
         suspendCancellableCoroutine { cont ->
-            auth.signInWithEmailAndPassword(email, password).addOnCompleteListener { task ->
-                if (!task.isSuccessful) {
-                    cont.resume(Result.failure(task.exception ?: Exception("Sign in failed")))
-                    return@addOnCompleteListener
-                }
+            val task = auth.signInWithEmailAndPassword(email, password)
+            task.addOnSuccessListener {
                 val user = auth.currentUser
-                if (user == null) cont.resume(Result.failure(Exception("No user"))) else issueToken(user, cont)
+                if (user == null) {
+                    if (cont.isActive) cont.resume(Result.failure(Exception("No user")))
+                } else {
+                    issueToken(user, cont)
+                }
+            }
+            task.addOnFailureListener { ex ->
+                val message = when (ex) {
+                    is FirebaseAuthInvalidUserException -> "No account found with that email. Please sign up."
+                    is FirebaseAuthInvalidCredentialsException -> "Incorrect email or password. Please try again."
+                    else -> ex?.message ?: "Sign in failed"
+                }
+                if (cont.isActive) cont.resume(Result.failure(Exception(message)))
             }
         }
 
