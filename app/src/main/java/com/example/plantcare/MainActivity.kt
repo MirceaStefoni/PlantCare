@@ -9,6 +9,7 @@ import androidx.compose.ui.Modifier
 import androidx.navigation.compose.rememberNavController
 import com.example.plantcare.navigation.AppNavHost
 import dagger.hilt.android.AndroidEntryPoint
+import com.example.plantcare.navigation.Routes
 import com.example.plantcare.ui.theme.PlantCareTheme
 
 @AndroidEntryPoint
@@ -19,7 +20,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             PlantCareTheme {
                 val navController = rememberNavController()
-                AppNavHost(navController = navController, startDestination = "home")
+                AppNavHost(navController = navController, startDestination = Routes.ROOT)
             }
         }
     }

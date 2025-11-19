@@ -26,12 +26,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Image
-import androidx.compose.material.icons.filled.LocalFlorist
 import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Person
+import androidx.activity.compose.BackHandler
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Button
@@ -79,6 +78,11 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.example.plantcare.R
+import androidx.compose.ui.res.painterResource
+import com.example.plantcare.ui.components.getPlantIconById
+import com.example.plantcare.ui.theme.ForestGreen
+import com.example.plantcare.ui.theme.LightSage
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import java.io.File
@@ -86,22 +90,34 @@ import java.util.concurrent.TimeUnit
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeScreen(onOpenPlant: (String) -> Unit, viewModel: HomeViewModel = hiltViewModel()) {
+fun HomeScreen(onOpenPlant: (String) -> Unit, onOpenProfile: () -> Unit, viewModel: HomeViewModel = hiltViewModel()) {
     val plants by viewModel.plants.collectAsState()
     var showAdd by remember { mutableStateOf(false) }
     val context = LocalContext.current
+
+    BackHandler {
+        (context as? android.app.Activity)?.moveTaskToBack(true)
+    }
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { 
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            Icons.Filled.LocalFlorist, 
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(28.dp)
-                        )
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(LightSage.copy(alpha = 0.6f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = getPlantIconById(0),
+                                contentDescription = "PlantCare logo",
+                                tint = ForestGreen,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             "PlantCare", 
@@ -113,6 +129,7 @@ fun HomeScreen(onOpenPlant: (String) -> Unit, viewModel: HomeViewModel = hiltVie
                 },
                 actions = {
                     Surface(
+                        onClick = onOpenProfile,
                         modifier = Modifier
                             .padding(end = 12.dp)
                             .size(40.dp),
@@ -279,12 +296,20 @@ private fun EmptyState(modifier: Modifier = Modifier) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Icon(
-            Icons.Filled.LocalFlorist,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
-            modifier = Modifier.size(120.dp)
-        )
+        Box(
+            modifier = Modifier
+                .size(140.dp)
+                .clip(CircleShape)
+                .background(LightSage),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = getPlantIconById(0),
+                contentDescription = "Plant icon",
+                tint = ForestGreen,
+                modifier = Modifier.size(64.dp)
+            )
+        }
         Spacer(modifier = Modifier.height(24.dp))
         Text(
             "No Plants Yet",
@@ -541,7 +566,7 @@ private fun AddPlantDialog(
                 
                 // Gallery option
                 AddPlantOptionCard(
-                    icon = Icons.Filled.Image,
+                    icon = getPlantIconById(0),
                     title = "Choose from Gallery",
                     description = "Select a photo from your device",
                     onClick = {

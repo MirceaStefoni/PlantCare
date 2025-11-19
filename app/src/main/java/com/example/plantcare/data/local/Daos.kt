@@ -8,6 +8,24 @@ import androidx.room.Query
 import kotlinx.coroutines.flow.Flow
 
 @Dao
+interface UserDao {
+    @Query("SELECT * FROM users WHERE email = :email LIMIT 1")
+    suspend fun findByEmail(email: String): UserEntity?
+
+    @Query("SELECT * FROM users WHERE id = :id LIMIT 1")
+    suspend fun getById(id: String): UserEntity?
+
+    @Query("SELECT COUNT(*) FROM users WHERE id = :userId")
+    suspend fun userCount(userId: String): Int
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(user: UserEntity)
+
+    @Query("DELETE FROM users WHERE id = :id")
+    suspend fun deleteById(id: String)
+}
+
+@Dao
 interface PlantDao {
     @Query("SELECT * FROM plants WHERE user_id = :userId ORDER BY created_at DESC")
     suspend fun getPlants(userId: String): List<PlantEntity>
@@ -23,15 +41,6 @@ interface PlantDao {
 
     @Query("DELETE FROM plants WHERE id = :plantId")
     suspend fun deleteById(plantId: String)
-}
-
-@Dao
-interface UserDao {
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsertUser(user: UserEntity)
-
-    @Query("SELECT COUNT(*) FROM users WHERE id = :userId")
-    suspend fun userCount(userId: String): Int
 }
 
 @Dao

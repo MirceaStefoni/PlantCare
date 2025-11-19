@@ -34,7 +34,7 @@ class PlantRepositoryImpl(
     private suspend fun ensureUser(userId: String) {
         if (userDao.userCount(userId) == 0) {
             val now = System.currentTimeMillis()
-            userDao.upsertUser(
+            userDao.upsert(
                 UserEntity(
                     id = userId,
                     email = "local@plantcare.app",
