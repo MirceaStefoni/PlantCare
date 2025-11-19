@@ -12,6 +12,7 @@ data class UserEntity(
     val email: String,
     val display_name: String?,
     val profile_photo_url: String?,
+    val profile_icon_id: Int = 0,
     val created_at: Long,
     val updated_at: Long
 )

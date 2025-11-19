@@ -4,7 +4,8 @@ data class User(
     val id: String,
     val email: String,
     val displayName: String?,
-    val profilePhotoUrl: String?
+    val profilePhotoUrl: String?,
+    val profileIconId: Int = 0
 )
 
 data class Plant(
