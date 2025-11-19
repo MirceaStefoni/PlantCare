@@ -43,7 +43,10 @@ fun AppNavHost(navController: NavHostController, startDestination: String) {
             LaunchedEffect(session, ready) {
                 val dest = if (session != null) Routes.HOME else if (ready) Routes.WELCOME else null
                 if (dest != null) {
-                navController.navigate(dest) { popUpTo(Routes.ROOT) { inclusive = true } }
+                    navController.navigate(dest) {
+                        popUpTo(Routes.ROOT) { inclusive = false }
+                        launchSingleTop = true
+                    }
                 }
             }
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
@@ -82,13 +85,13 @@ fun AppNavHost(navController: NavHostController, startDestination: String) {
             ProfileScreen(
                 onLogout = {
                     navController.navigate(Routes.WELCOME) {
-                        popUpTo(Routes.ROOT) { inclusive = true }
+                        popUpTo(Routes.ROOT) { inclusive = false }
                         launchSingleTop = true
                     }
                 },
                 onAccountDeleted = {
                     navController.navigate(Routes.WELCOME) {
-                        popUpTo(Routes.ROOT) { inclusive = true }
+                        popUpTo(Routes.ROOT) { inclusive = false }
                         launchSingleTop = true
                     }
                 },

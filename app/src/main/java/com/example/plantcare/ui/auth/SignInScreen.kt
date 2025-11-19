@@ -76,7 +76,7 @@ fun SignInScreen(
         if (session != null) onNavigateHome()
     }
 
-    Column(Modifier.fillMaxSize().padding(16.dp)) {
+    Column(Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 24.dp)) {
         Spacer(Modifier.height(24.dp))
         Box(
             modifier = Modifier
@@ -121,17 +121,9 @@ fun SignInScreen(
             modifier = Modifier.fillMaxWidth()
         )
         Spacer(Modifier.height(4.dp))
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(checked = rememberMe, onCheckedChange = { rememberMe = it })
-                Text("Remember me")
-            }
-            Text(
-                "Forgot Password?",
-                color = ForestGreen,
-                textDecoration = TextDecoration.Underline,
-                modifier = Modifier.clickable { onOpenReset() }
-            )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Checkbox(checked = rememberMe, onCheckedChange = { rememberMe = it })
+            Text("Remember me")
         }
 
         Spacer(Modifier.height(16.dp))

@@ -23,7 +23,6 @@ import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Divider
 import androidx.compose.material3.IconButton
@@ -75,7 +74,6 @@ fun SignUpScreen(
     var confirm by remember { mutableStateOf("") }
     var showPassword by remember { mutableStateOf(false) }
     var showConfirm by remember { mutableStateOf(false) }
-    var acceptedTerms by remember { mutableStateOf(false) }
 
     val nameValid = displayName.length in 2..50
     val emailValid = email.contains('@') && email.contains('.') && email.length in 5..254
@@ -85,7 +83,7 @@ fun SignUpScreen(
     val passValid = passLen && passUpper && passDigit
     val confirmValid = confirm == password && confirm.isNotEmpty()
 
-    val canSubmit = nameValid && emailValid && passValid && confirmValid && acceptedTerms && !loading
+    val canSubmit = nameValid && emailValid && passValid && confirmValid && !loading
 
     val strength = listOf(passLen, passUpper, passDigit).count { it } / 3f
     val strengthLabel = when {
@@ -178,15 +176,7 @@ fun SignUpScreen(
         )
 
         Spacer(Modifier.height(8.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Checkbox(checked = acceptedTerms, onCheckedChange = { acceptedTerms = it })
-            Text("I agree to the ")
-            Text("Terms of Service", color = ForestGreen, textDecoration = TextDecoration.Underline)
-            Text(" and ")
-            Text("Privacy Policy", color = ForestGreen, textDecoration = TextDecoration.Underline)
-        }
-
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(16.dp))
         Button(
             onClick = { vm.signUp(email, password, displayName) },
             enabled = canSubmit,
