@@ -1,6 +1,7 @@
 package com.example.plantcare.data.auth
 
 import com.example.plantcare.data.local.AppDatabase
+import com.example.plantcare.data.local.SyncState
 import com.example.plantcare.data.local.UserEntity
 import com.example.plantcare.domain.model.AuthSession
 import com.example.plantcare.domain.model.AuthTokens
@@ -45,7 +46,9 @@ class FakeAuthService(private val db: AppDatabase) {
             display_name = displayName,
             profile_photo_url = null,
             created_at = now,
-            updated_at = now
+            updated_at = now,
+            sync_state = SyncState.SYNCED,
+            last_sync_error = null
         )
         db.userDao().upsert(entity)
         emailToPasswordHash[email] = hashPassword(password)
@@ -80,7 +83,9 @@ class FakeAuthService(private val db: AppDatabase) {
                 display_name = "Google User",
                 profile_photo_url = null,
                 created_at = now,
-                updated_at = now
+                updated_at = now,
+                sync_state = SyncState.SYNCED,
+                last_sync_error = null
             )
             db.userDao().upsert(entity)
             entity
@@ -100,7 +105,8 @@ class FakeAuthService(private val db: AppDatabase) {
         val updated = existing.copy(
             display_name = displayName ?: existing.display_name,
             profile_photo_url = photoUrl ?: existing.profile_photo_url,
-            updated_at = System.currentTimeMillis()
+            updated_at = System.currentTimeMillis(),
+            sync_state = SyncState.PENDING
         )
         db.userDao().upsert(updated)
         return Result.success(toDomain(updated))

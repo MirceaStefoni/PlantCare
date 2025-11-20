@@ -1,6 +1,8 @@
 package com.example.plantcare.di
 
+import androidx.work.WorkManager
 import com.example.plantcare.data.local.AppDatabase
+import com.example.plantcare.data.remote.PlantRemoteDataSource
 import com.example.plantcare.data.repository.PlantRepositoryImpl
 import com.example.plantcare.domain.repository.PlantRepository
 import dagger.Module
@@ -14,8 +16,12 @@ import javax.inject.Singleton
 object RepositoryModule {
     @Provides
     @Singleton
-    fun providePlantRepository(db: AppDatabase): PlantRepository =
-        PlantRepositoryImpl(db.plantDao(), db.userDao())
+    fun providePlantRepository(
+        db: AppDatabase,
+        remote: PlantRemoteDataSource,
+        workManager: WorkManager
+    ): PlantRepository =
+        PlantRepositoryImpl(db.plantDao(), db.userDao(), remote, workManager)
 }
 
 

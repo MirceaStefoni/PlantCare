@@ -6,6 +6,8 @@ import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
+enum class SyncState { PENDING, SYNCED, FAILED }
+
 @Entity(tableName = "users")
 data class UserEntity(
     @PrimaryKey val id: String,
@@ -14,7 +16,9 @@ data class UserEntity(
     val profile_photo_url: String?,
     val profile_icon_id: Int = 0,
     val created_at: Long,
-    val updated_at: Long
+    val updated_at: Long,
+    val sync_state: SyncState = SyncState.SYNCED,
+    val last_sync_error: String? = null
 )
 
 @Entity(
@@ -36,7 +40,9 @@ data class PlantEntity(
     val reference_photo_url: String?,
     val added_method: String,
     val created_at: Long,
-    val updated_at: Long
+    val updated_at: Long,
+    val sync_state: SyncState = SyncState.PENDING,
+    val last_sync_error: String? = null
 )
 
 @Entity(
@@ -61,7 +67,9 @@ data class CareInstructionsEntity(
     val pruning_info: String?,
     val common_issues: String?,
     val seasonal_tips: String?,
-    val fetched_at: Long
+    val fetched_at: Long,
+    val sync_state: SyncState = SyncState.SYNCED,
+    val last_sync_error: String? = null
 )
 
 

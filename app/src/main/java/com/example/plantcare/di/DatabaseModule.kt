@@ -19,6 +19,15 @@ object DatabaseModule {
         Room.databaseBuilder(context, AppDatabase::class.java, "plantcare.db")
             .fallbackToDestructiveMigration()
             .build()
+
+    @Provides
+    fun provideUserDao(db: AppDatabase) = db.userDao()
+
+    @Provides
+    fun providePlantDao(db: AppDatabase) = db.plantDao()
+
+    @Provides
+    fun provideCareDao(db: AppDatabase) = db.careDao()
 }
 
 

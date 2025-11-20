@@ -30,6 +30,9 @@ interface PlantDao {
     @Query("SELECT * FROM plants WHERE user_id = :userId ORDER BY created_at DESC")
     suspend fun getPlants(userId: String): List<PlantEntity>
 
+    @Query("SELECT * FROM plants WHERE id = :plantId LIMIT 1")
+    suspend fun getPlantById(plantId: String): PlantEntity?
+
     @Query("SELECT * FROM plants WHERE user_id = :userId ORDER BY created_at DESC")
     fun observePlants(userId: String): Flow<List<PlantEntity>>
 
@@ -41,6 +44,12 @@ interface PlantDao {
 
     @Query("DELETE FROM plants WHERE id = :plantId")
     suspend fun deleteById(plantId: String)
+
+    @Query("SELECT * FROM plants WHERE sync_state != :state")
+    suspend fun getPlantsBySyncState(state: SyncState = SyncState.SYNCED): List<PlantEntity>
+
+    @Query("UPDATE plants SET sync_state = :state, last_sync_error = :error WHERE id = :plantId")
+    suspend fun updateSyncState(plantId: String, state: SyncState, error: String?)
 }
 
 @Dao
