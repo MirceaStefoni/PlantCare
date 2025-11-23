@@ -6,7 +6,7 @@ import androidx.room.TypeConverters
 
 @Database(
     entities = [UserEntity::class, PlantEntity::class, CareInstructionsEntity::class],
-    version = 3,
+    version = 5,
     exportSchema = true
 )
 @TypeConverters(SyncStateConverters::class)

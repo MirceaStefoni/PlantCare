@@ -59,9 +59,16 @@ class HomeViewModel @Inject constructor(
                     userId = userId,
                     commonName = name.ifBlank { "Unknown" },
                     scientificName = scientific,
+                    nickname = null,
+                    location = null,
                     userPhotoUrl = uri,
                     referencePhotoUrl = null,
                     addedMethod = "photo",
+                    notes = null,
+                    acquiredDate = null,
+                    wateringFrequency = null,
+                    lightRequirements = null,
+                    healthStatus = null,
                     createdAt = now,
                     updatedAt = now
                 )
@@ -79,9 +86,16 @@ class HomeViewModel @Inject constructor(
                     userId = userId,
                     commonName = name,
                     scientificName = null,
+                    nickname = null,
+                    location = null,
                     userPhotoUrl = "", // will be filled after photo API or user update
                     referencePhotoUrl = null,
                     addedMethod = "name",
+                    notes = null,
+                    acquiredDate = null,
+                    wateringFrequency = null,
+                    lightRequirements = null,
+                    healthStatus = null,
                     createdAt = now,
                     updatedAt = now
                 )

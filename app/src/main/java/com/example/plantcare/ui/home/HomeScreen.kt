@@ -4,7 +4,6 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Environment
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -50,11 +49,9 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -74,12 +71,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.example.plantcare.R
-import androidx.compose.ui.res.painterResource
 import com.example.plantcare.ui.components.getPlantIconById
 import com.example.plantcare.ui.theme.ForestGreen
 import com.example.plantcare.ui.theme.LightSage
@@ -87,6 +81,9 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import java.io.File
 import java.util.concurrent.TimeUnit
+import com.google.accompanist.permissions.ExperimentalPermissionsApi
+import com.google.accompanist.permissions.rememberPermissionState
+import com.google.accompanist.permissions.isGranted
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -515,8 +512,7 @@ private fun PlantCard(
         }
     }
 }
-
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalPermissionsApi::class)
 @Composable
 private fun AddPlantDialog(
     onDismiss: () -> Unit,
@@ -528,7 +524,7 @@ private fun AddPlantDialog(
     var showNameInput by remember { mutableStateOf(false) }
     var name by remember { mutableStateOf("") }
     
-    val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+    val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) onPickFromGallery(uri)
     }
     val photoUri = remember { createTempImageUri(context) }
@@ -536,6 +532,8 @@ private fun AddPlantDialog(
         if (success && photoUri != null) onCapturePhoto(photoUri)
     }
     
+    val cameraPermissionState = rememberPermissionState(android.Manifest.permission.CAMERA)
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         containerColor = MaterialTheme.colorScheme.surface,
@@ -564,15 +562,13 @@ private fun AddPlantDialog(
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                 )
                 
-                // Gallery option
+                    // Gallery option
                 AddPlantOptionCard(
                     icon = getPlantIconById(0),
                     title = "Choose from Gallery",
                     description = "Select a photo from your device",
                     onClick = {
-                        galleryLauncher.launch(
-                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                        )
+                        galleryLauncher.launch("image/*")
                     }
                 )
                 
@@ -581,7 +577,13 @@ private fun AddPlantDialog(
                     icon = Icons.Filled.CameraAlt,
                     title = "Take a Photo",
                     description = "Capture a new image with your camera",
-                    onClick = { photoUri?.let { cameraLauncher.launch(it) } }
+                    onClick = { 
+                        if (cameraPermissionState.status.isGranted) {
+                            photoUri?.let { cameraLauncher.launch(it) }
+                        } else {
+                            cameraPermissionState.launchPermissionRequest()
+                        }
+                    }
                 )
                 
                 // Name option
