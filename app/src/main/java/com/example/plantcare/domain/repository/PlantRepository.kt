@@ -8,6 +8,7 @@ interface PlantRepository {
     suspend fun getPlants(userId: String): List<Plant>
     suspend fun addOrUpdate(plant: Plant)
     suspend fun delete(plantId: String)
+    suspend fun syncFromRemote(userId: String)
 }
 
 

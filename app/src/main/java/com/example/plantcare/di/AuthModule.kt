@@ -6,6 +6,7 @@ import com.example.plantcare.data.auth.FirebaseAuthService
 import com.example.plantcare.data.local.AppDatabase
 import com.example.plantcare.data.session.SessionManager
 import com.example.plantcare.domain.repository.AuthRepository
+import com.example.plantcare.data.remote.PlantRemoteDataSource
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInClient
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
@@ -49,8 +50,15 @@ object AuthModule {
         db: AppDatabase,
         service: FirebaseAuthService,
         sessionManager: SessionManager,
-        googleClient: GoogleSignInClient
-    ): AuthRepository = FirebaseAuthRepositoryImpl(db, service, sessionManager, googleClient)
+        googleClient: GoogleSignInClient,
+        plantRemoteDataSource: PlantRemoteDataSource
+    ): AuthRepository = FirebaseAuthRepositoryImpl(
+        db,
+        service,
+        sessionManager,
+        googleClient,
+        plantRemoteDataSource
+    )
 }
 
 

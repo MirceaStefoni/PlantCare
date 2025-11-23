@@ -1,6 +1,7 @@
 package com.example.plantcare.data.auth
 
 import com.example.plantcare.data.local.AppDatabase
+import com.example.plantcare.data.remote.PlantRemoteDataSource
 import com.example.plantcare.data.session.SessionManager
 import com.example.plantcare.domain.model.AuthSession
 import com.example.plantcare.domain.model.User
@@ -15,7 +16,8 @@ class FirebaseAuthRepositoryImpl(
     private val db: AppDatabase,
     private val service: FirebaseAuthService,
     private val sessionManager: SessionManager,
-    private val googleClient: GoogleSignInClient
+    private val googleClient: GoogleSignInClient,
+    private val plantRemoteDataSource: PlantRemoteDataSource
 ) : AuthRepository {
     override val sessionFlow: Flow<AuthSession?> = sessionManager.sessionFlow
 
@@ -69,6 +71,10 @@ class FirebaseAuthRepositoryImpl(
         }
 
     override suspend fun deleteAccount(): Result<Unit> {
+        val userId = runCatching { sessionManager.sessionFlow.first()?.user?.id }.getOrNull()
+        if (userId != null) {
+            runCatching { plantRemoteDataSource.deleteAllPlants(userId) }
+        }
         val res = service.deleteAccount()
         if (res.isSuccess) {
             withContext(Dispatchers.IO) { db.clearAllTables() }
