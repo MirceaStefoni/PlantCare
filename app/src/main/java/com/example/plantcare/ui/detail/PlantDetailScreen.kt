@@ -139,17 +139,28 @@ fun PlantDetailScreen(
                         .padding(24.dp)
                 ) {
                     Text(
-                        text = p.commonName,
+                        text = if (!p.nickname.isNullOrBlank()) p.nickname else p.commonName,
                         style = MaterialTheme.typography.headlineMedium,
                         color = Color.White,
                         fontWeight = FontWeight.Bold
                     )
+                    
+                    if (!p.nickname.isNullOrBlank()) {
+                         Text(
+                            text = p.commonName,
+                            style = MaterialTheme.typography.titleMedium,
+                            color = Color.White.copy(alpha = 0.9f),
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+
                     if (!p.scientificName.isNullOrBlank()) {
                         Text(
                             text = p.scientificName,
                             style = MaterialTheme.typography.bodyLarge,
                             color = Color.White.copy(alpha = 0.8f),
-                            fontStyle = FontStyle.Italic
+                            fontStyle = FontStyle.Italic,
+                            modifier = Modifier.padding(top = 4.dp)
                         )
                     }
                 }

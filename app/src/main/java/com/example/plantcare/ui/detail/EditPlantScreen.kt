@@ -1,11 +1,9 @@
 package com.example.plantcare.ui.detail
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -17,14 +15,13 @@ import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Eco
-import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LocationOn
-import androidx.compose.material.icons.filled.Science
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -119,8 +116,9 @@ fun EditPlantScreen(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(200.dp)
-                    .clip(RoundedCornerShape(16.dp))
+                    .height(250.dp)
+                    .clip(RoundedCornerShape(24.dp))
+                    .shadow(8.dp, RoundedCornerShape(24.dp))
             ) {
                 AsyncImage(
                     model = ImageRequest.Builder(LocalContext.current)
@@ -138,54 +136,59 @@ fun EditPlantScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        FilledTonalButton(onClick = { /* TODO: Change Photo */ }) {
+                        FilledTonalButton(
+                            onClick = { /* TODO: Change Photo */ },
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        ) {
                             Icon(Icons.Filled.CameraAlt, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))
                             Text("Change Photo")
                         }
-                        Spacer(Modifier.height(8.dp))
-                        SuggestionChip(
-                            onClick = { /* TODO: Remove Photo */ },
-                            label = { Text("Remove Photo") },
-                            colors = SuggestionChipDefaults.suggestionChipColors(
-                                containerColor = Color.Black.copy(alpha = 0.5f),
-                                labelColor = Color.White
-                            ),
-                            border = null
-                        )
                     }
                 }
             }
 
             // Form Fields
-            OutlinedTextField(
-                value = commonName,
-                onValueChange = { commonName = it },
-                label = { Text("Common Name") },
-                leadingIcon = { Icon(Icons.Filled.Eco, contentDescription = null) },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                // Nickname (Primary Name)
+                OutlinedTextField(
+                    value = nickname,
+                    onValueChange = { nickname = it },
+                    label = { Text("Nickname") },
+                    leadingIcon = { Icon(Icons.AutoMirrored.Filled.Label, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    placeholder = { Text("Give your plant a name") },
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                        focusedLabelColor = MaterialTheme.colorScheme.primary
+                    )
+                )
 
-            OutlinedTextField(
-                value = scientificName,
-                onValueChange = { scientificName = it },
-                label = { Text("Scientific Name") },
-                leadingIcon = { Icon(Icons.Filled.Science, contentDescription = null) }, // Beaker replacement
-                trailingIcon = { Icon(Icons.Filled.Info, contentDescription = null) },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true
-            )
-
-            OutlinedTextField(
-                value = nickname,
-                onValueChange = { nickname = it },
-                label = { Text("Nickname") },
-                leadingIcon = { Icon(Icons.AutoMirrored.Filled.Label, contentDescription = null) },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                placeholder = { Text("Give your plant a personal name") }
-            )
+                // Common Name (Read Only)
+                OutlinedTextField(
+                    value = commonName,
+                    onValueChange = { }, // Read-only
+                    label = { Text("Common Name") },
+                    leadingIcon = { Icon(Icons.Filled.Eco, contentDescription = null) },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    enabled = false,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        disabledTextColor = MaterialTheme.colorScheme.onSurface,
+                        disabledBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+                        disabledLeadingIconColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        disabledLabelColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                    )
+                )
+                
+                // Scientific Name hidden as requested
+            }
 
             // Location Dropdown (Simulated with TextField for now)
             var locationExpanded by remember { mutableStateOf(false) }

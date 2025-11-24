@@ -65,16 +65,6 @@ fun ProfileScreen(
     val scope = rememberCoroutineScope()
 
     Scaffold(
-        topBar = {
-            CenterAlignedTopAppBar(
-                title = { Text("Profile") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.Filled.ArrowBack, contentDescription = "Back", tint = ForestGreen)
-                    }
-                }
-            )
-        },
         containerColor = Color.White
     ) { padding ->
         Column(

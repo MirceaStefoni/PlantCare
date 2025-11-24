@@ -78,7 +78,22 @@ fun AppNavHost(navController: NavHostController, startDestination: String) {
             ResetPasswordScreen(onBackToSignIn = { navController.popBackStack() })
         }
         composable(Routes.HOME) {
-            HomeScreen(onOpenPlant = { id -> navController.navigate("detail/$id") }, onOpenProfile = { navController.navigate(Routes.PROFILE) })
+            HomeScreen(
+                onOpenPlant = { id -> navController.navigate("detail/$id") },
+                onOpenProfile = { /* Profile is now a tab in Home */ },
+                onLogout = {
+                    navController.navigate(Routes.WELCOME) {
+                        popUpTo(Routes.ROOT) { inclusive = false }
+                        launchSingleTop = true
+                    }
+                },
+                onAccountDeleted = {
+                    navController.navigate(Routes.WELCOME) {
+                        popUpTo(Routes.ROOT) { inclusive = false }
+                        launchSingleTop = true
+                    }
+                }
+            )
         }
         composable(Routes.DETAIL) { backStackEntry ->
             val id = backStackEntry.arguments?.getString("plantId") ?: return@composable
