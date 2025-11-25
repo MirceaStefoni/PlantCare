@@ -107,7 +107,12 @@ fun AppNavHost(navController: NavHostController, startDestination: String) {
             val id = backStackEntry.arguments?.getString("plantId") ?: return@composable
             EditPlantScreen(
                 plantId = id,
-                onBack = { navController.popBackStack() }
+                onBack = { navController.popBackStack() },
+                onPlantDeleted = {
+                    navController.navigate(Routes.HOME) {
+                        popUpTo(Routes.HOME) { inclusive = true }
+                    }
+                }
             )
         }
         composable(Routes.PROFILE) {

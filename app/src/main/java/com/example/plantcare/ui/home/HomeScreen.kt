@@ -256,8 +256,7 @@ fun HomeScreen(
                                     subtitle = if (!p.nickname.isNullOrBlank()) p.commonName else p.scientificName ?: "",
                                     photoUrl = if (p.userPhotoUrl.isNotBlank()) p.userPhotoUrl else p.referencePhotoUrl ?: "",
                                     updatedAt = p.updatedAt,
-                                    onClick = { onOpenPlant(p.id) },
-                                    onDelete = { viewModel.deletePlant(p.id) }
+                                    onClick = { onOpenPlant(p.id) }
                                 )
                             }
                         }
@@ -353,11 +352,8 @@ private fun PlantCard(
     subtitle: String,
     photoUrl: String,
     updatedAt: Long,
-    onClick: () -> Unit,
-    onDelete: () -> Unit
+    onClick: () -> Unit
 ) {
-    var showConfirm by remember { mutableStateOf(false) }
-    
     Card(
         onClick = onClick, 
         shape = RoundedCornerShape(20.dp),
@@ -401,28 +397,6 @@ private fun PlantCard(
                 }
             }
             
-            // Delete button - top right
-            Surface(
-                color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.9f),
-                shape = CircleShape,
-                modifier = Modifier
-                    .padding(12.dp)
-                    .align(Alignment.TopEnd)
-                    .size(36.dp)
-            ) {
-                IconButton(
-                    onClick = { showConfirm = true },
-                    modifier = Modifier.fillMaxSize()
-                ) {
-                    Icon(
-                        Icons.Default.Delete, 
-                        contentDescription = "Delete", 
-                        tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-            }
-            
             // Plant name gradient overlay - bottom
             Box(
                 modifier = Modifier
@@ -457,71 +431,6 @@ private fun PlantCard(
                             maxLines = 1, 
                             overflow = TextOverflow.Ellipsis
                         )
-                    }
-                }
-            }
-        }
-    }
-    
-    // Delete confirmation dialog
-    if (showConfirm) {
-        Dialog(onDismissRequest = { showConfirm = false }) {
-            Surface(
-                shape = RoundedCornerShape(24.dp),
-                color = MaterialTheme.colorScheme.surface,
-                tonalElevation = 8.dp
-            ) {
-                Column(
-                    Modifier.padding(24.dp), 
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    Icon(
-                        Icons.Default.Delete,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier
-                            .size(48.dp)
-                            .align(Alignment.CenterHorizontally)
-                    )
-                    Text(
-                        "Delete Plant?",
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Bold,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Text(
-                        "This action cannot be undone. All data for \"$name\" will be permanently removed.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        OutlinedButton(
-                            onClick = { showConfirm = false },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp)
-                        ) { 
-                            Text("Cancel", fontWeight = FontWeight.Medium) 
-                        }
-                        Button(
-                            onClick = { 
-                                showConfirm = false
-                                onDelete() 
-                            },
-                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.error,
-                                contentColor = MaterialTheme.colorScheme.onError
-                            ),
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp)
-                        ) { 
-                            Text("Delete", fontWeight = FontWeight.Bold) 
-                        }
                     }
                 }
             }

@@ -184,7 +184,7 @@ fun PlantDetailScreen(
                     elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Column(
+    Column(
                         modifier = Modifier.padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
@@ -213,22 +213,6 @@ fun PlantDetailScreen(
                         )
 
                         Spacer(modifier = Modifier.height(4.dp))
-                        
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(16.dp)
-                        ) {
-                            Text(
-                                text = "Edit",
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.clickable { onEdit(plantId) }
-                            )
-                            Text(
-                                text = "Delete",
-                                color = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.clickable { /* Handle delete confirmation */ }
-                            )
-                        }
                     }
                 }
 

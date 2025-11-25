@@ -38,6 +38,7 @@ import java.util.*
 fun EditPlantScreen(
     plantId: String,
     onBack: () -> Unit,
+    onPlantDeleted: () -> Unit, // Added callback
     viewModel: EditPlantViewModel = hiltViewModel()
 ) {
     val plant by viewModel.plant.collectAsState()
@@ -275,7 +276,7 @@ fun EditPlantScreen(
                         color = MaterialTheme.colorScheme.error.copy(alpha = 0.8f)
                     )
                     Button(
-                        onClick = { viewModel.deletePlant(plantId) { onBack() } }, // Should probably navigate home
+                        onClick = { viewModel.deletePlant(plantId) { onPlantDeleted() } },
                         colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent),
                         border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.error),
                         modifier = Modifier.padding(top = 8.dp)

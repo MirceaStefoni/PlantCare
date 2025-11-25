@@ -44,7 +44,12 @@ class PlantRemoteDataSource @Inject constructor(
 
     suspend fun deletePlant(userId: String, plantId: String) {
         // Remove Firestore document first to keep data consistent even if Storage cleanup fails
-        plantsCollection(userId).document(plantId).delete().await()
+        try {
+            plantsCollection(userId).document(plantId).delete().await()
+        } catch (e: Exception) {
+            // Log error but proceed to try cleaning up storage
+            e.printStackTrace()
+        }
 
         // Best-effort cleanup of the associated Storage folder
         val plantFolder = storage.reference.child("users/$userId/plants/$plantId")
