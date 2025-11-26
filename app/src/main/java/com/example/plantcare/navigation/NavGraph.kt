@@ -10,8 +10,11 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavHostController
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.navArgument
+import com.example.plantcare.ui.care.CareGuideScreen
 import com.example.plantcare.ui.detail.PlantDetailScreen
 import com.example.plantcare.ui.home.HomeScreen
 import com.example.plantcare.ui.auth.SignInScreen
@@ -33,6 +36,7 @@ object Routes {
     const val HOME = "home"
     const val DETAIL = "detail/{plantId}"
     const val EDIT_PLANT = "edit_plant/{plantId}"
+    const val CARE_GUIDE = "care_guide/{plantId}"
     const val PROFILE = "profile"
 }
 
@@ -100,7 +104,8 @@ fun AppNavHost(navController: NavHostController, startDestination: String) {
             PlantDetailScreen(
                 plantId = id,
                 onBack = { navController.popBackStack() },
-                onEdit = { plantId -> navController.navigate("edit_plant/$plantId") }
+                onEdit = { plantId -> navController.navigate("edit_plant/$plantId") },
+                onOpenCareGuide = { plantId -> navController.navigate("care_guide/$plantId") }
             )
         }
         composable(Routes.EDIT_PLANT) { backStackEntry ->
@@ -114,6 +119,12 @@ fun AppNavHost(navController: NavHostController, startDestination: String) {
                     }
                 }
             )
+        }
+        composable(
+            Routes.CARE_GUIDE,
+            arguments = listOf(navArgument("plantId") { type = NavType.StringType })
+        ) {
+            CareGuideScreen(onBack = { navController.popBackStack() })
         }
         composable(Routes.PROFILE) {
             ProfileScreen(
