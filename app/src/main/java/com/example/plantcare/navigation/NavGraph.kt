@@ -22,6 +22,8 @@ import com.example.plantcare.ui.auth.WelcomeScreen
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.plantcare.ui.auth.AuthViewModel
 
+import com.example.plantcare.ui.detail.EditPlantScreen
+
 object Routes {
     const val ROOT = "root"
     const val SIGN_IN = "sign_in"
@@ -30,6 +32,7 @@ object Routes {
     const val WELCOME = "welcome"
     const val HOME = "home"
     const val DETAIL = "detail/{plantId}"
+    const val EDIT_PLANT = "edit_plant/{plantId}"
     const val PROFILE = "profile"
 }
 
@@ -75,11 +78,42 @@ fun AppNavHost(navController: NavHostController, startDestination: String) {
             ResetPasswordScreen(onBackToSignIn = { navController.popBackStack() })
         }
         composable(Routes.HOME) {
-            HomeScreen(onOpenPlant = { id -> navController.navigate("detail/$id") }, onOpenProfile = { navController.navigate(Routes.PROFILE) })
+            HomeScreen(
+                onOpenPlant = { id -> navController.navigate("detail/$id") },
+                onOpenProfile = { /* Profile is now a tab in Home */ },
+                onLogout = {
+                    navController.navigate(Routes.WELCOME) {
+                        popUpTo(Routes.ROOT) { inclusive = false }
+                        launchSingleTop = true
+                    }
+                },
+                onAccountDeleted = {
+                    navController.navigate(Routes.WELCOME) {
+                        popUpTo(Routes.ROOT) { inclusive = false }
+                        launchSingleTop = true
+                    }
+                }
+            )
         }
         composable(Routes.DETAIL) { backStackEntry ->
             val id = backStackEntry.arguments?.getString("plantId") ?: return@composable
-            PlantDetailScreen(plantId = id)
+            PlantDetailScreen(
+                plantId = id,
+                onBack = { navController.popBackStack() },
+                onEdit = { plantId -> navController.navigate("edit_plant/$plantId") }
+            )
+        }
+        composable(Routes.EDIT_PLANT) { backStackEntry ->
+            val id = backStackEntry.arguments?.getString("plantId") ?: return@composable
+            EditPlantScreen(
+                plantId = id,
+                onBack = { navController.popBackStack() },
+                onPlantDeleted = {
+                    navController.navigate(Routes.HOME) {
+                        popUpTo(Routes.HOME) { inclusive = true }
+                    }
+                }
+            )
         }
         composable(Routes.PROFILE) {
             ProfileScreen(

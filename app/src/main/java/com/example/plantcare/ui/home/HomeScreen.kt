@@ -4,7 +4,6 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Environment
 import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -50,11 +49,9 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -74,12 +71,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.example.plantcare.R
-import androidx.compose.ui.res.painterResource
 import com.example.plantcare.ui.components.getPlantIconById
 import com.example.plantcare.ui.theme.ForestGreen
 import com.example.plantcare.ui.theme.LightSage
@@ -87,13 +81,27 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import java.io.File
 import java.util.concurrent.TimeUnit
+import com.google.accompanist.permissions.ExperimentalPermissionsApi
+import com.google.accompanist.permissions.rememberPermissionState
+import com.google.accompanist.permissions.isGranted
+
+import com.example.plantcare.ui.profile.ProfileScreen
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeScreen(onOpenPlant: (String) -> Unit, onOpenProfile: () -> Unit, viewModel: HomeViewModel = hiltViewModel()) {
+fun HomeScreen(
+    onOpenPlant: (String) -> Unit, 
+    onOpenProfile: () -> Unit, // Kept for signature compatibility but unused for navigation now
+    onLogout: () -> Unit,
+    onAccountDeleted: () -> Unit,
+    viewModel: HomeViewModel = hiltViewModel()
+) {
     val plants by viewModel.plants.collectAsState()
     var showAdd by remember { mutableStateOf(false) }
     val context = LocalContext.current
+
+    // Navigation State
+    var selectedTab by remember { mutableStateOf(0) } // 0: Home, 1: History, 2: Profile
 
     BackHandler {
         (context as? android.app.Activity)?.moveTaskToBack(true)
@@ -101,69 +109,53 @@ fun HomeScreen(onOpenPlant: (String) -> Unit, onOpenProfile: () -> Unit, viewMod
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { 
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            modifier = Modifier
-                                .size(40.dp)
-                                .clip(CircleShape)
-                                .background(LightSage.copy(alpha = 0.6f)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = getPlantIconById(0),
-                                contentDescription = "PlantCare logo",
-                                tint = ForestGreen,
-                                modifier = Modifier.size(24.dp)
+            if (selectedTab == 0) { // Only show TopBar on Home Tab
+                TopAppBar(
+                    title = { 
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(CircleShape)
+                                    .background(LightSage.copy(alpha = 0.6f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = getPlantIconById(0),
+                                    contentDescription = "PlantCare logo",
+                                    tint = ForestGreen,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                "PlantCare", 
+                                style = MaterialTheme.typography.headlineSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
                             )
                         }
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            "PlantCare", 
-                            style = MaterialTheme.typography.headlineSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                },
-                actions = {
-                    Surface(
-                        onClick = onOpenProfile,
-                        modifier = Modifier
-                            .padding(end = 12.dp)
-                            .size(40.dp),
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.primaryContainer,
-                        tonalElevation = 2.dp
-                    ) {
-                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Icon(
-                                Icons.Outlined.Person, 
-                                contentDescription = "Profile", 
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(24.dp)
-                            )
-                        }
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    )
                 )
-            )
+            }
         },
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = { showAdd = true }, 
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary,
-                modifier = Modifier.size(64.dp)
-            ) {
-                Icon(
-                    Icons.Default.Add, 
-                    contentDescription = "Add Plant",
-                    modifier = Modifier.size(28.dp)
-                )
+            if (selectedTab == 0) {
+                FloatingActionButton(
+                    onClick = { showAdd = true }, 
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    modifier = Modifier.size(64.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Add, 
+                        contentDescription = "Add Plant",
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
             }
         },
         bottomBar = {
@@ -185,8 +177,8 @@ fun HomeScreen(onOpenPlant: (String) -> Unit, onOpenProfile: () -> Unit, viewMod
                     )
                     
                     NavigationBarItem(
-                        selected = true,
-                        onClick = { },
+                        selected = selectedTab == 0,
+                        onClick = { selectedTab = 0 },
                         icon = { 
                             Icon(
                                 Icons.Outlined.Home, 
@@ -204,8 +196,8 @@ fun HomeScreen(onOpenPlant: (String) -> Unit, onOpenProfile: () -> Unit, viewMod
                         colors = navColors
                     )
                     NavigationBarItem(
-                        selected = false,
-                        onClick = { },
+                        selected = selectedTab == 1,
+                        onClick = { selectedTab = 1 },
                         icon = { 
                             Icon(
                                 Icons.Outlined.History, 
@@ -223,8 +215,8 @@ fun HomeScreen(onOpenPlant: (String) -> Unit, onOpenProfile: () -> Unit, viewMod
                         colors = navColors
                     )
                     NavigationBarItem(
-                        selected = false,
-                        onClick = { },
+                        selected = selectedTab == 2,
+                        onClick = { selectedTab = 2 },
                         icon = { 
                             Icon(
                                 Icons.Outlined.Person, 
@@ -245,24 +237,44 @@ fun HomeScreen(onOpenPlant: (String) -> Unit, onOpenProfile: () -> Unit, viewMod
             }
         }
     ) { padding ->
-        if (plants.isEmpty()) {
-            EmptyState(modifier = Modifier.fillMaxSize().padding(padding))
-        } else {
-            LazyVerticalGrid(
-                columns = GridCells.Adaptive(minSize = 160.dp),
-                modifier = Modifier.fillMaxSize().padding(padding),
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                items(plants, key = { it.id }) { p ->
-                    PlantCard(
-                        name = p.commonName,
-                        scientific = p.scientificName ?: "",
-                        photoUrl = if (p.userPhotoUrl.isNotBlank()) p.userPhotoUrl else p.referencePhotoUrl ?: "",
-                        updatedAt = p.updatedAt,
-                        onClick = { onOpenPlant(p.id) },
-                        onDelete = { viewModel.deletePlant(p.id) }
+        Box(modifier = Modifier.padding(padding)) {
+            when (selectedTab) {
+                0 -> {
+                    if (plants.isEmpty()) {
+                        EmptyState(modifier = Modifier.fillMaxSize())
+                    } else {
+                        LazyVerticalGrid(
+                            columns = GridCells.Adaptive(minSize = 160.dp),
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            items(plants, key = { it.id }) { p ->
+                                PlantCard(
+                                    name = if (!p.nickname.isNullOrBlank()) p.nickname else p.commonName,
+                                    subtitle = if (!p.nickname.isNullOrBlank()) p.commonName else p.scientificName ?: "",
+                                    photoUrl = if (p.userPhotoUrl.isNotBlank()) p.userPhotoUrl else p.referencePhotoUrl ?: "",
+                                    updatedAt = p.updatedAt,
+                                    onClick = { onOpenPlant(p.id) }
+                                )
+                            }
+                        }
+                    }
+                }
+                1 -> {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("History Feature Coming Soon")
+                    }
+                }
+                2 -> {
+                    // Embedded Profile Screen
+                    // We need to pass 'onBack' as {} or handle it if we want it to go back to Home tab
+                    // But logically 'Profile' is a main tab, so 'onBack' might not be relevant or could switch tab to Home.
+                    ProfileScreen(
+                        onLogout = onLogout,
+                        onAccountDeleted = onAccountDeleted,
+                        onBack = { selectedTab = 0 } // Back from profile goes to Home
                     )
                 }
             }
@@ -337,14 +349,11 @@ private fun EmptyState(modifier: Modifier = Modifier) {
 @Composable
 private fun PlantCard(
     name: String,
-    scientific: String,
+    subtitle: String,
     photoUrl: String,
     updatedAt: Long,
-    onClick: () -> Unit,
-    onDelete: () -> Unit
+    onClick: () -> Unit
 ) {
-    var showConfirm by remember { mutableStateOf(false) }
-    
     Card(
         onClick = onClick, 
         shape = RoundedCornerShape(20.dp),
@@ -388,28 +397,6 @@ private fun PlantCard(
                 }
             }
             
-            // Delete button - top right
-            Surface(
-                color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.9f),
-                shape = CircleShape,
-                modifier = Modifier
-                    .padding(12.dp)
-                    .align(Alignment.TopEnd)
-                    .size(36.dp)
-            ) {
-                IconButton(
-                    onClick = { showConfirm = true },
-                    modifier = Modifier.fillMaxSize()
-                ) {
-                    Icon(
-                        Icons.Default.Delete, 
-                        contentDescription = "Delete", 
-                        tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-            }
-            
             // Plant name gradient overlay - bottom
             Box(
                 modifier = Modifier
@@ -435,9 +422,9 @@ private fun PlantCard(
                         maxLines = 1, 
                         overflow = TextOverflow.Ellipsis
                     )
-                    if (scientific.isNotBlank()) {
+                    if (subtitle.isNotBlank()) {
                         Text(
-                            scientific, 
+                            subtitle, 
                             color = Color.White.copy(alpha = 0.85f),
                             fontStyle = FontStyle.Italic,
                             style = MaterialTheme.typography.bodySmall,
@@ -449,74 +436,8 @@ private fun PlantCard(
             }
         }
     }
-    
-    // Delete confirmation dialog
-    if (showConfirm) {
-        Dialog(onDismissRequest = { showConfirm = false }) {
-            Surface(
-                shape = RoundedCornerShape(24.dp),
-                color = MaterialTheme.colorScheme.surface,
-                tonalElevation = 8.dp
-            ) {
-                Column(
-                    Modifier.padding(24.dp), 
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    Icon(
-                        Icons.Default.Delete,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.error,
-                        modifier = Modifier
-                            .size(48.dp)
-                            .align(Alignment.CenterHorizontally)
-                    )
-                    Text(
-                        "Delete Plant?",
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Bold,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Text(
-                        "This action cannot be undone. All data for \"$name\" will be permanently removed.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        OutlinedButton(
-                            onClick = { showConfirm = false },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp)
-                        ) { 
-                            Text("Cancel", fontWeight = FontWeight.Medium) 
-                        }
-                        Button(
-                            onClick = { 
-                                showConfirm = false
-                                onDelete() 
-                            },
-                            colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.error,
-                                contentColor = MaterialTheme.colorScheme.onError
-                            ),
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp)
-                        ) { 
-                            Text("Delete", fontWeight = FontWeight.Bold) 
-                        }
-                    }
-                }
-            }
-        }
-    }
 }
-
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalPermissionsApi::class)
 @Composable
 private fun AddPlantDialog(
     onDismiss: () -> Unit,
@@ -528,7 +449,7 @@ private fun AddPlantDialog(
     var showNameInput by remember { mutableStateOf(false) }
     var name by remember { mutableStateOf("") }
     
-    val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+    val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) onPickFromGallery(uri)
     }
     val photoUri = remember { createTempImageUri(context) }
@@ -536,6 +457,8 @@ private fun AddPlantDialog(
         if (success && photoUri != null) onCapturePhoto(photoUri)
     }
     
+    val cameraPermissionState = rememberPermissionState(android.Manifest.permission.CAMERA)
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         containerColor = MaterialTheme.colorScheme.surface,
@@ -564,15 +487,13 @@ private fun AddPlantDialog(
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                 )
                 
-                // Gallery option
+                    // Gallery option
                 AddPlantOptionCard(
                     icon = getPlantIconById(0),
                     title = "Choose from Gallery",
                     description = "Select a photo from your device",
                     onClick = {
-                        galleryLauncher.launch(
-                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                        )
+                        galleryLauncher.launch("image/*")
                     }
                 )
                 
@@ -581,7 +502,13 @@ private fun AddPlantDialog(
                     icon = Icons.Filled.CameraAlt,
                     title = "Take a Photo",
                     description = "Capture a new image with your camera",
-                    onClick = { photoUri?.let { cameraLauncher.launch(it) } }
+                    onClick = { 
+                        if (cameraPermissionState.status.isGranted) {
+                            photoUri?.let { cameraLauncher.launch(it) }
+                        } else {
+                            cameraPermissionState.launchPermissionRequest()
+                        }
+                    }
                 )
                 
                 // Name option

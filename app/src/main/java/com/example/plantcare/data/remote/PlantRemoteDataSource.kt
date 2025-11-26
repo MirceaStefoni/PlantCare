@@ -24,9 +24,17 @@ class PlantRemoteDataSource @Inject constructor(
                 mapOf(
                     "commonName" to entity.common_name,
                     "scientificName" to entity.scientific_name,
+                    "nickname" to entity.nickname,
+                    "location" to entity.location,
                     "userPhotoUrl" to entity.user_photo_url,
                     "referencePhotoUrl" to entity.reference_photo_url,
                     "addedMethod" to entity.added_method,
+                    "notes" to entity.notes,
+                    "acquiredDate" to entity.acquired_date,
+                    "wateringFrequency" to entity.watering_frequency,
+                    "lightRequirements" to entity.light_requirements,
+                    "healthStatus" to entity.health_status,
+                    "isAnalyzed" to entity.is_analyzed,
                     "createdAt" to entity.created_at,
                     "updatedAt" to entity.updated_at
                 )
@@ -36,7 +44,12 @@ class PlantRemoteDataSource @Inject constructor(
 
     suspend fun deletePlant(userId: String, plantId: String) {
         // Remove Firestore document first to keep data consistent even if Storage cleanup fails
-        plantsCollection(userId).document(plantId).delete().await()
+        try {
+            plantsCollection(userId).document(plantId).delete().await()
+        } catch (e: Exception) {
+            // Log error but proceed to try cleaning up storage
+            e.printStackTrace()
+        }
 
         // Best-effort cleanup of the associated Storage folder
         val plantFolder = storage.reference.child("users/$userId/plants/$plantId")
@@ -69,9 +82,17 @@ class PlantRemoteDataSource @Inject constructor(
                 userId = userId,
                 common_name = commonName,
                 scientific_name = doc.getString("scientificName"),
+                nickname = doc.getString("nickname"),
+                location = doc.getString("location"),
                 user_photo_url = doc.getString("userPhotoUrl") ?: "",
                 reference_photo_url = doc.getString("referencePhotoUrl"),
                 added_method = doc.getString("addedMethod") ?: "name",
+                notes = doc.getString("notes"),
+                acquired_date = doc.getLong("acquiredDate"),
+                watering_frequency = doc.getString("wateringFrequency"),
+                light_requirements = doc.getString("lightRequirements"),
+                health_status = doc.getString("healthStatus"),
+                is_analyzed = doc.getBoolean("isAnalyzed") ?: false,
                 created_at = doc.getLong("createdAt") ?: now,
                 updated_at = doc.getLong("updatedAt") ?: now,
                 sync_state = SyncState.SYNCED,

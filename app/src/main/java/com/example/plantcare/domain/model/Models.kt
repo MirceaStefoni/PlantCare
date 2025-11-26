@@ -13,9 +13,17 @@ data class Plant(
     val userId: String,
     val commonName: String,
     val scientificName: String?,
+    val nickname: String?,
+    val location: String?,
     val userPhotoUrl: String,
     val referencePhotoUrl: String?,
     val addedMethod: String,
+    val notes: String?,
+    val acquiredDate: Long?,
+    val wateringFrequency: String?,
+    val lightRequirements: String?,
+    val healthStatus: String?,
+    val isAnalyzed: Boolean = false,
     val createdAt: Long,
     val updatedAt: Long
 )
