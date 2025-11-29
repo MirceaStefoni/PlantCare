@@ -28,7 +28,16 @@ object RepositoryModule {
         client: OkHttpClient,
         @ApplicationContext context: Context
     ): PlantRepository =
-        PlantRepositoryImpl(db.plantDao(), db.userDao(), remote, workManager, geminiService, client, context)
+        PlantRepositoryImpl(
+            plantDao = db.plantDao(),
+            userDao = db.userDao(),
+            careDao = db.careDao(),
+            remote = remote,
+            workManager = workManager,
+            geminiService = geminiService,
+            client = client,
+            context = context
+        )
 }
 
 

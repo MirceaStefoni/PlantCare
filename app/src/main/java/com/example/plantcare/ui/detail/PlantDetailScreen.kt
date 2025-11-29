@@ -41,6 +41,7 @@ fun PlantDetailScreen(
     plantId: String,
     onBack: () -> Unit = {},
     onEdit: (String) -> Unit = {},
+    onOpenCareGuide: (String) -> Unit = {},
     viewModel: PlantDetailViewModel = hiltViewModel()
 ) {
     val plant by viewModel.plant.collectAsState()
@@ -230,7 +231,7 @@ fun PlantDetailScreen(
                     buttonText = "View Guide",
                     iconBgColor = Color(0xFFE8F5E9),
                     iconTint = Color(0xFF2E7D32),
-                    onClick = { /* TODO */ }
+                    onClick = { onOpenCareGuide(p.id) }
                 )
 
                 FeatureCard(

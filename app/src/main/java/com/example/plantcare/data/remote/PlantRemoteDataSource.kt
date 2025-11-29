@@ -1,5 +1,6 @@
 package com.example.plantcare.data.remote
 
+import com.example.plantcare.data.local.CareInstructionsEntity
 import com.example.plantcare.data.local.PlantEntity
 import com.example.plantcare.data.local.SyncState
 import com.google.firebase.firestore.FirebaseFirestore
@@ -14,8 +15,13 @@ class PlantRemoteDataSource @Inject constructor(
     private val firestore: FirebaseFirestore,
     private val storage: FirebaseStorage
 ) {
+    private fun userDoc(userId: String) = firestore.collection("users").document(userId)
+
     private fun plantsCollection(userId: String) =
-        firestore.collection("users").document(userId).collection("plants")
+        userDoc(userId).collection("plants")
+
+    private fun careCollection(userId: String) =
+        userDoc(userId).collection("care_guides")
 
     suspend fun upsertPlant(entity: PlantEntity) {
         plantsCollection(entity.userId)
@@ -51,6 +57,8 @@ class PlantRemoteDataSource @Inject constructor(
             e.printStackTrace()
         }
 
+        runCatching { careCollection(userId).document(plantId).delete().await() }
+
         // Best-effort cleanup of the associated Storage folder
         val plantFolder = storage.reference.child("users/$userId/plants/$plantId")
         runCatching { plantFolder.child("user.jpg").delete().await() }
@@ -61,6 +69,10 @@ class PlantRemoteDataSource @Inject constructor(
         val snapshot = plantsCollection(userId).get().await()
         snapshot.documents.forEach { doc ->
             runCatching { doc.reference.delete().await() }
+        }
+        runCatching {
+            val careDocs = careCollection(userId).get().await()
+            careDocs.documents.forEach { doc -> runCatching { doc.reference.delete().await() } }
         }
         val rootFolder = storage.reference.child("users/$userId/plants")
         deleteStorageFolder(rootFolder)
@@ -99,6 +111,70 @@ class PlantRemoteDataSource @Inject constructor(
                 last_sync_error = null
             )
         }
+    }
+
+    suspend fun upsertCareInstructions(userId: String, care: CareInstructionsEntity) {
+        careCollection(userId)
+            .document(care.plantId)
+            .set(
+                mapOf(
+                    "wateringInfo" to care.watering_info,
+                    "lightInfo" to care.light_info,
+                    "temperatureInfo" to care.temperature_info,
+                    "humidityInfo" to care.humidity_info,
+                    "soilInfo" to care.soil_info,
+                    "fertilizationInfo" to care.fertilization_info,
+                    "pruningInfo" to care.pruning_info,
+                    "commonIssues" to care.common_issues,
+                    "seasonalTips" to care.seasonal_tips,
+                    "fetchedAt" to care.fetched_at
+                )
+            )
+            .await()
+    }
+
+    suspend fun fetchCareInstructions(userId: String): List<CareInstructionsEntity> {
+        val snapshot = careCollection(userId).get().await()
+        return snapshot.documents.mapNotNull { doc ->
+            val plantId = doc.id
+            CareInstructionsEntity(
+                id = plantId,
+                plantId = plantId,
+                watering_info = doc.getString("wateringInfo"),
+                light_info = doc.getString("lightInfo"),
+                temperature_info = doc.getString("temperatureInfo"),
+                humidity_info = doc.getString("humidityInfo"),
+                soil_info = doc.getString("soilInfo"),
+                fertilization_info = doc.getString("fertilizationInfo"),
+                pruning_info = doc.getString("pruningInfo"),
+                common_issues = doc.getString("commonIssues"),
+                seasonal_tips = doc.getString("seasonalTips"),
+                fetched_at = doc.getLong("fetchedAt") ?: System.currentTimeMillis(),
+                sync_state = SyncState.SYNCED,
+                last_sync_error = null
+            )
+        }
+    }
+
+    suspend fun fetchCareInstruction(userId: String, plantId: String): CareInstructionsEntity? {
+        val doc = careCollection(userId).document(plantId).get().await()
+        if (!doc.exists()) return null
+        return CareInstructionsEntity(
+            id = plantId,
+            plantId = plantId,
+            watering_info = doc.getString("wateringInfo"),
+            light_info = doc.getString("lightInfo"),
+            temperature_info = doc.getString("temperatureInfo"),
+            humidity_info = doc.getString("humidityInfo"),
+            soil_info = doc.getString("soilInfo"),
+            fertilization_info = doc.getString("fertilizationInfo"),
+            pruning_info = doc.getString("pruningInfo"),
+            common_issues = doc.getString("commonIssues"),
+            seasonal_tips = doc.getString("seasonalTips"),
+            fetched_at = doc.getLong("fetchedAt") ?: System.currentTimeMillis(),
+            sync_state = SyncState.SYNCED,
+            last_sync_error = null
+        )
     }
 }
 
