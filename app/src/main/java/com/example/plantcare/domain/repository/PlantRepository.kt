@@ -13,6 +13,12 @@ interface PlantRepository {
     suspend fun syncFromRemote(userId: String)
     suspend fun analyzePlant(plantId: String)
     suspend fun getCareGuide(plantId: String, forceRefresh: Boolean = false): CareInstructions?
+    suspend fun generateCareGuideChunk(
+        plantId: String,
+        keys: List<String>,
+        focus: String
+    ): Map<String, String?>
+    suspend fun saveCareGuide(plantId: String, values: Map<String, String?>): CareInstructions?
 }
 
 

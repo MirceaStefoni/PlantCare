@@ -7,6 +7,7 @@ import androidx.work.Constraints
 import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.OutOfQuotaPolicy
 import androidx.work.WorkManager
 import com.example.plantcare.data.local.CareDao
 import com.example.plantcare.data.local.CareInstructionsEntity
@@ -22,6 +23,7 @@ import com.example.plantcare.data.remote.InlineData
 import com.example.plantcare.data.remote.Part
 import com.example.plantcare.data.remote.PlantRemoteDataSource
 import com.example.plantcare.data.sync.PlantSyncWorker
+import com.example.plantcare.domain.model.CareGuideFields
 import com.example.plantcare.domain.model.CareInstructions
 import com.example.plantcare.domain.model.Plant
 import com.example.plantcare.domain.repository.PlantRepository
@@ -146,24 +148,26 @@ class PlantRepositoryImpl(
 
         try {
             Log.d("PlantRepo", "Sending request to Gemini...")
-            val response = geminiService.generateContent(
-                apiKey = BuildConfig.GEMINI_API_KEY,
-                req = GenerateContentRequest(
-                    contents = listOf(
-                        Content(
-                            parts = listOf(
-                                Part(text = prompt),
-                                Part(
-                                    inline_data = InlineData(
-                                        mime_type = "image/jpeg",
-                                        data = base64Image
+            val response = retryOnTimeout(attempts = 2) {
+                geminiService.generateContent(
+                    apiKey = BuildConfig.GEMINI_API_KEY,
+                    req = GenerateContentRequest(
+                        contents = listOf(
+                            Content(
+                                parts = listOf(
+                                    Part(text = prompt),
+                                    Part(
+                                        inline_data = InlineData(
+                                            mime_type = "image/jpeg",
+                                            data = base64Image
+                                        )
                                     )
                                 )
                             )
                         )
                     )
                 )
-            )
+            }
             
             Log.d("PlantRepo", "Response received. Parsing...")
             val text = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
@@ -196,43 +200,33 @@ class PlantRepositoryImpl(
     }
 
     override suspend fun getCareGuide(plantId: String, forceRefresh: Boolean): CareInstructions? {
-        val cached = careDao.getCare(plantId)
-        if (cached != null) return cached.toDomain()
+        if (!forceRefresh) {
+            careDao.getCare(plantId)?.let { return it.toDomain() }
+        }
 
         val plant = plantDao.getPlantById(plantId) ?: return null
 
         val remoteExisting = runCatching { remote.fetchCareInstruction(plant.userId, plantId) }.getOrNull()
         if (remoteExisting != null) {
-            careDao.upsertCare(remoteExisting)
+            careDao.upsertCare(remoteExisting.copy(sync_state = SyncState.SYNCED, last_sync_error = null))
             return remoteExisting.toDomain()
         }
 
-        val now = System.currentTimeMillis()
+        if (forceRefresh) {
+            careDao.deleteByPlantId(plantId)
+        }
 
-        val prompt = """
-            You are a strict JSON generator. Produce COMPLETE and VALID JSON only—no prose.
-            Describe care for ${plant.common_name} (${plant.scientific_name ?: "unknown scientific name"}).
-            Schema (keys fixed, values are strings):
-            {
-              "watering_info": "...",
-              "light_info": "...",
-              "temperature_info": "...",
-              "humidity_info": "...",
-              "soil_info": "...",
-              "fertilization_info": "...",
-              "pruning_info": "...",
-              "common_issues": "...",
-              "seasonal_tips": "..."
-            }
-            Formatting rules:
-            - Each value must be plain text separated by newline characters (\n).
-            - Start every bullet with "- " (hyphen + space). Do not include other bullet markers.
-            - Do NOT use Markdown (**bold**, quotes, code fences) or additional JSON fields.
-            - Escape any double quotes inside values as \".
-            - Do NOT include stray quotation marks outside JSON.
-            - No trailing commas.
-            - Return the JSON minified (single block) with double quotes around keys and values.
-        """.trimIndent()
+        return null
+    }
+
+    override suspend fun generateCareGuideChunk(
+        plantId: String,
+        keys: List<String>,
+        focus: String
+    ): Map<String, String?> {
+        require(keys.isNotEmpty()) { "Care guide chunk requires at least one key" }
+        val plant = plantDao.getPlantById(plantId) ?: error("Plant not found for care guide: $plantId")
+        val prompt = buildCareGuidePrompt(plant, keys, focus)
 
         return try {
             val response = retryOnTimeout {
@@ -243,33 +237,42 @@ class PlantRepositoryImpl(
                     )
                 )
             }
-
             val text = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
-                ?: return null
-            val jsonString = text.extractJsonPayload().normalizeJsonPayload()
+                ?: error("Gemini response missing content")
+            val jsonString = text.extractJsonPayload().normalizeJsonPayload(keys)
             val json = Gson().fromJson(jsonString, JsonObject::class.java)
-
-            val entity = CareInstructionsEntity(
-                id = plantId,
-                plantId = plantId,
-                watering_info = json.cleaned("watering_info"),
-                light_info = json.cleaned("light_info"),
-                temperature_info = json.cleaned("temperature_info"),
-                humidity_info = json.cleaned("humidity_info"),
-                soil_info = json.cleaned("soil_info"),
-                fertilization_info = json.cleaned("fertilization_info"),
-                pruning_info = json.cleaned("pruning_info"),
-                common_issues = json.cleaned("common_issues"),
-                seasonal_tips = json.cleaned("seasonal_tips"),
-                fetched_at = now
-            )
-            careDao.upsertCare(entity)
-            runCatching { remote.upsertCareInstructions(plant.userId, entity) }
-            entity.toDomain()
+            keys.associateWith { key -> json.cleaned(key) }
         } catch (e: Exception) {
-            Log.e("PlantRepo", "Failed to fetch care guide", e)
-            null
+            Log.e("PlantRepo", "Failed to fetch care chunk for $keys", e)
+            throw e
         }
+    }
+
+    override suspend fun saveCareGuide(
+        plantId: String,
+        values: Map<String, String?>
+    ): CareInstructions? {
+        val plant = plantDao.getPlantById(plantId) ?: return null
+        val now = System.currentTimeMillis()
+        val entity = CareInstructionsEntity(
+            id = plantId,
+            plantId = plantId,
+            watering_info = values[CareGuideFields.WATERING],
+            light_info = values[CareGuideFields.LIGHT],
+            temperature_info = values[CareGuideFields.TEMPERATURE],
+            humidity_info = values[CareGuideFields.HUMIDITY],
+            soil_info = values[CareGuideFields.SOIL],
+            fertilization_info = values[CareGuideFields.FERTILIZATION],
+            pruning_info = values[CareGuideFields.PRUNING],
+            common_issues = values[CareGuideFields.ISSUES],
+            seasonal_tips = values[CareGuideFields.SEASONAL],
+            fetched_at = now,
+            sync_state = SyncState.SYNCED,
+            last_sync_error = null
+        )
+        careDao.upsertCare(entity)
+        runCatching { remote.upsertCareInstructions(plant.userId, entity) }
+        return entity.toDomain()
     }
 
     // Ensures a user row exists before inserting plants tied to that user
@@ -298,10 +301,11 @@ class PlantRepositoryImpl(
                     .setRequiredNetworkType(NetworkType.CONNECTED)
                     .build()
             )
+            .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
             .build()
         workManager.enqueueUniqueWork(
             PlantSyncWorker.UNIQUE_NAME,
-            ExistingWorkPolicy.KEEP,
+            ExistingWorkPolicy.APPEND_OR_REPLACE,
             request
         )
     }
@@ -378,25 +382,13 @@ private fun JsonObject.stringOrNull(key: String): String? =
 private fun JsonObject.cleaned(key: String): String? =
     stringOrNull(key)?.sanitizeCareText()?.takeIf { it.isNotBlank() }
 
-private val CARE_GUIDE_KEYS = listOf(
-    "watering_info",
-    "light_info",
-    "temperature_info",
-    "humidity_info",
-    "soil_info",
-    "fertilization_info",
-    "pruning_info",
-    "common_issues",
-    "seasonal_tips"
-)
-
-private fun String.normalizeJsonPayload(): String {
-        val normalized = StringBuilder("{")
-    CARE_GUIDE_KEYS.forEachIndexed { index, key ->
+private fun String.normalizeJsonPayload(keys: List<String>): String {
+    val normalized = StringBuilder("{")
+    keys.forEachIndexed { index, key ->
         val value = extractValueForKey(key)
-            val sanitized = (value ?: "- No data.").sanitizeCareText().escapeJson()
+        val sanitized = (value ?: "- No data.").sanitizeCareText().escapeJson()
         normalized.append("\"").append(key).append("\":\"").append(sanitized).append("\"")
-        if (index != CARE_GUIDE_KEYS.lastIndex) normalized.append(",")
+        if (index != keys.lastIndex) normalized.append(",")
     }
     normalized.append("}")
     return normalized.toString()
@@ -408,6 +400,29 @@ private fun String.escapeJson(): String =
         .replace("\"", "\\\"")
         .replace("\n", "\\n")
         .replace("\r", "\\n")
+
+private fun buildCareGuidePrompt(
+    plant: PlantEntity,
+    keys: List<String>,
+    focus: String
+): String {
+    val schemaBlock = keys.joinToString(separator = ",\n") { "\"$it\": \"...\"" }
+    val focusLine = focus.takeIf { it.isNotBlank() }?.let { "\nFocus: $it" } ?: ""
+    return """
+        You are a strict JSON generator. Return VALID JSON only—no prose.
+        Plant: ${plant.common_name} (${plant.scientific_name ?: "unknown scientific name"}).$focusLine
+        Schema (keys fixed, values are strings):
+        {
+            $schemaBlock
+        }
+        Formatting rules:
+        - Provide newline-separated guidance with each line starting with "- ".
+        - Plain text only. No Markdown, no extra keys, no code fences.
+        - Escape any internal double quotes as \".
+        - Include only these keys: ${keys.joinToString()}.
+        - Return compact JSON on a single line without trailing commas.
+    """.trimIndent()
+}
 
 private suspend fun <T> retryOnTimeout(
     attempts: Int = 3,

@@ -13,6 +13,9 @@ import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.components.SingletonComponent
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.tasks.await
 
 class PlantSyncWorker(
@@ -38,17 +41,27 @@ class PlantSyncWorker(
         val pending = plantDao.getPlantsBySyncState()
         if (pending.isEmpty()) return Result.success()
 
-        pending.forEach { entity ->
-            try {
-                val prepared = uploadPhotoIfNeeded(entity)
-                remote.upsertPlant(prepared)
-                plantDao.upsertPlant(prepared.copy(sync_state = SyncState.SYNCED, last_sync_error = null))
-            } catch (e: Exception) {
-                plantDao.updateSyncState(entity.id, SyncState.FAILED, e.message)
-                return Result.retry()
-            }
+        val errors = coroutineScope {
+            pending.map { entity ->
+                async {
+                    runCatching {
+                        val prepared = uploadPhotoIfNeeded(entity)
+                        remote.upsertPlant(prepared)
+                        plantDao.upsertPlant(
+                            prepared.copy(
+                                sync_state = SyncState.SYNCED,
+                                last_sync_error = null
+                            )
+                        )
+                        null
+                    }.getOrElse { throwable ->
+                        plantDao.updateSyncState(entity.id, SyncState.FAILED, throwable.message)
+                        throwable
+                    }
+                }
+            }.awaitAll().filterNotNull()
         }
-        return Result.success()
+        return if (errors.isEmpty()) Result.success() else Result.retry()
     }
 
     private suspend fun uploadPhotoIfNeeded(entity: PlantEntity): PlantEntity {

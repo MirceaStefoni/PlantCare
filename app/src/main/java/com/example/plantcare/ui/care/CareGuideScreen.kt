@@ -2,41 +2,30 @@ package com.example.plantcare.ui.care
 
 import android.content.Intent
 import android.text.format.DateUtils
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.EnergySavingsLeaf
-import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Thermostat
 import androidx.compose.material.icons.filled.TipsAndUpdates
 import androidx.compose.material.icons.filled.WaterDrop
 import androidx.compose.material.icons.filled.WbSunny
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Divider
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -49,20 +38,17 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.example.plantcare.domain.model.CareGuideFields
 import com.example.plantcare.domain.model.CareInstructions
 import com.example.plantcare.ui.theme.ForestGreen
 
@@ -76,9 +62,11 @@ fun CareGuideScreen(
     val context = LocalContext.current
     val scrollState = rememberScrollState()
 
-    val shareBody = remember(state.instructions, state.plantName) {
-        state.instructions?.toShareText(state.plantName)
-    }
+    val shareBody = state.instructions?.toShareText(state.plantName)
+    val completedGroups = state.groupStates.values.count { it.status == CareGroupStatus.READY }
+    val progressFraction = if (CareGuideGroups.isNotEmpty()) {
+        completedGroups / CareGuideGroups.size.toFloat()
+    } else 1f
 
     Scaffold(
         topBar = {
@@ -110,7 +98,7 @@ fun CareGuideScreen(
         }
     ) { padding ->
         when {
-            state.isLoading && state.instructions == null -> {
+            state.isBootstrapping -> {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -118,28 +106,6 @@ fun CareGuideScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     CircularProgressIndicator()
-                }
-            }
-
-            state.errorMessage != null && state.instructions == null -> {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(padding),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            text = state.errorMessage ?: "Something went wrong",
-                            color = Color.Red,
-                            style = MaterialTheme.typography.bodyMedium,
-                            modifier = Modifier.padding(16.dp),
-                            textAlign = TextAlign.Center
-                        )
-                        Button(onClick = { viewModel.refresh() }) {
-                            Text("Try again")
-                        }
-                    }
                 }
             }
 
@@ -152,8 +118,11 @@ fun CareGuideScreen(
                         .padding(horizontal = 20.dp, vertical = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    if (state.isLoading) {
-                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    if (state.isSequentialLoading) {
+                        LinearProgressIndicator(
+                            progress = progressFraction.coerceIn(0f, 1f),
+                            modifier = Modifier.fillMaxWidth()
+                        )
                     }
 
                     Text(
@@ -171,7 +140,8 @@ fun CareGuideScreen(
 
                     GuideSummaryCard(
                         plantName = state.plantName,
-                        instructions = state.instructions
+                        isLoading = state.isSequentialLoading,
+                        lastUpdated = state.lastUpdated
                     )
 
                     state.errorMessage?.let { message ->
@@ -182,9 +152,13 @@ fun CareGuideScreen(
                         )
                     }
 
-                    val sections = buildSections(state.instructions)
-                    sections.forEach { section ->
-                        CareSectionCard(section = section)
+                    CareGuideGroups.forEach { definition ->
+                        val groupState = state.groupStates[definition.id] ?: CareGroupState()
+                        CareGuideGroupCard(
+                            definition = definition,
+                            values = definition.keys.associateWith { key -> state.fieldValues[key] },
+                            state = groupState
+                        )
                     }
                 }
             }
@@ -195,7 +169,8 @@ fun CareGuideScreen(
 @Composable
 private fun GuideSummaryCard(
     plantName: String,
-    instructions: CareInstructions?
+    isLoading: Boolean,
+    lastUpdated: Long?
 ) {
     ElevatedCard(
         shape = RoundedCornerShape(20.dp),
@@ -215,100 +190,94 @@ private fun GuideSummaryCard(
                 style = MaterialTheme.typography.bodyMedium,
                 color = Color.White.copy(alpha = 0.9f)
             )
-            Divider(color = Color.White.copy(alpha = 0.2f))
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Box(
-                    modifier = Modifier
-                        .size(36.dp)
-                        .background(Color.White.copy(alpha = 0.15f), CircleShape),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(Icons.Filled.EnergySavingsLeaf, contentDescription = null, tint = Color.White)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(Icons.Filled.EnergySavingsLeaf, contentDescription = null, tint = Color.White)
+                val summary = when {
+                    isLoading -> "Generating personalized tips…"
+                    lastUpdated != null -> formatRelativeUpdate(lastUpdated)
+                    else -> "Care tips will appear once generated"
                 }
-                Text(
-                    instructions?.updatedDescription() ?: "Generating recommendations…",
-                    style = MaterialTheme.typography.bodySmall
-                )
+                Text(summary, style = MaterialTheme.typography.bodySmall)
             }
         }
     }
 }
 
-private data class CareSectionUiModel(
-    val title: String,
-    val description: String?,
-    val icon: ImageVector,
-    val chipColor: Color
-)
-
-private fun buildSections(instructions: CareInstructions?): List<CareSectionUiModel> {
-    if (instructions == null) return emptyList()
-    return listOf(
-        CareSectionUiModel("Watering", instructions.wateringInfo, Icons.Filled.WaterDrop, Color(0xFF2196F3)),
-        CareSectionUiModel("Light Requirements", instructions.lightInfo, Icons.Filled.WbSunny, Color(0xFFFFC107)),
-        CareSectionUiModel("Temperature", instructions.temperatureInfo, Icons.Filled.Thermostat, Color(0xFFFF7043)),
-        CareSectionUiModel("Humidity", instructions.humidityInfo, Icons.Filled.Cloud, Color(0xFF26C6DA)),
-        CareSectionUiModel("Soil & Potting", instructions.soilInfo, Icons.Filled.TipsAndUpdates, Color(0xFF8D6E63)),
-        CareSectionUiModel("Fertilization", instructions.fertilizationInfo, Icons.Filled.EnergySavingsLeaf, Color(0xFF7CB342)),
-        CareSectionUiModel("Pruning", instructions.pruningInfo, Icons.Filled.TipsAndUpdates, Color(0xFF5C6BC0)),
-        CareSectionUiModel("Common Problems", instructions.commonIssues, Icons.Filled.BugReport, Color(0xFFD32F2F)),
-        CareSectionUiModel("Seasonal Tips", instructions.seasonalTips, Icons.Filled.TipsAndUpdates, Color(0xFFFFB74D))
-    ).filter { !it.description.isNullOrBlank() }
-}
-
 @Composable
-private fun CareSectionCard(section: CareSectionUiModel) {
-    var expanded by rememberSaveable(section.title) { mutableStateOf(true) }
-    val chevronRotation by animateFloatAsState(targetValue = if (expanded) 0f else 180f, label = "chevron")
-
+private fun CareGuideGroupCard(
+    definition: CareGuideGroupDefinition,
+    values: Map<String, String?>,
+    state: CareGroupState
+) {
     ElevatedCard(
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.elevatedCardColors(containerColor = Color.White),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
         modifier = Modifier.fillMaxWidth()
     ) {
-        Column(modifier = Modifier
-            .fillMaxWidth()
-            .padding(16.dp)) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(48.dp)
-                    .background(Color.Transparent)
-                    .clickable { expanded = !expanded },
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(44.dp)
-                        .background(section.chipColor.copy(alpha = 0.15f), CircleShape),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(section.icon, contentDescription = null, tint = section.chipColor)
-                }
-                Spacer(modifier = Modifier.size(16.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(section.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                }
-                IconButton(onClick = { expanded = !expanded }) {
-                    Icon(
-                        imageVector = Icons.Filled.KeyboardArrowDown,
-                        contentDescription = if (expanded) "Collapse" else "Expand",
-                        modifier = Modifier
-                            .graphicsLayer { rotationZ = chevronRotation }
-                    )
-                }
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(definition.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(definition.description, style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+
+            definition.keys.forEach { key ->
+                CareGuideItemRow(
+                    label = CareGuideFieldLabels[key].orEmpty(),
+                    value = values[key],
+                    visual = fieldVisuals[key],
+                    isLoading = state.status == CareGroupStatus.LOADING && values[key].isNullOrBlank()
+                )
             }
 
-            AnimatedVisibility(visible = expanded) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 12.dp)
-                ) {
-                    section.description?.let { CareBodyText(it) }
-                }
+            state.errorMessage?.let { message ->
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.Red
+                )
             }
+        }
+    }
+}
+
+@Composable
+private fun CareGuideItemRow(
+    label: String,
+    value: String?,
+    visual: FieldVisual?,
+    isLoading: Boolean
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            visual?.let { Icon(it.icon, contentDescription = null, tint = it.color) }
+            Text(label, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+        }
+        when {
+            isLoading -> SkeletonParagraph()
+            value.isNullOrBlank() -> Text("Details will appear soon.", color = Color.Gray)
+            else -> CareBodyText(value)
+        }
+    }
+}
+
+@Composable
+private fun SkeletonParagraph(lines: Int = 2) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        repeat(lines) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(12.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(Color.LightGray.copy(alpha = 0.4f))
+            )
         }
     }
 }
@@ -335,15 +304,6 @@ private fun CareBodyText(text: String) {
     }
 }
 
-private fun CareInstructions.updatedDescription(): String {
-    val relative = DateUtils.getRelativeTimeSpanString(
-        fetchedAt,
-        System.currentTimeMillis(),
-        DateUtils.MINUTE_IN_MILLIS
-    )
-    return "Updated $relative"
-}
-
 private fun CareInstructions.toShareText(plantName: String): String =
     buildString {
         append("Care guide for ").append(plantName).appendLine()
@@ -364,4 +324,25 @@ private fun CareInstructions.toShareText(plantName: String): String =
         appendSection("Seasonal Tips", seasonalTips)
     }.trim()
 
+private fun formatRelativeUpdate(timestamp: Long): String {
+    val relative = DateUtils.getRelativeTimeSpanString(
+        timestamp,
+        System.currentTimeMillis(),
+        DateUtils.MINUTE_IN_MILLIS
+    )
+    return "Updated $relative"
+}
 
+private data class FieldVisual(val icon: ImageVector, val color: Color)
+
+private val fieldVisuals: Map<String, FieldVisual> = mapOf(
+    CareGuideFields.WATERING to FieldVisual(Icons.Filled.WaterDrop, Color(0xFF2196F3)),
+    CareGuideFields.LIGHT to FieldVisual(Icons.Filled.WbSunny, Color(0xFFFFC107)),
+    CareGuideFields.TEMPERATURE to FieldVisual(Icons.Filled.Thermostat, Color(0xFFFF7043)),
+    CareGuideFields.HUMIDITY to FieldVisual(Icons.Filled.Cloud, Color(0xFF26C6DA)),
+    CareGuideFields.SOIL to FieldVisual(Icons.Filled.TipsAndUpdates, Color(0xFF8D6E63)),
+    CareGuideFields.FERTILIZATION to FieldVisual(Icons.Filled.EnergySavingsLeaf, Color(0xFF7CB342)),
+    CareGuideFields.PRUNING to FieldVisual(Icons.Filled.TipsAndUpdates, Color(0xFF5C6BC0)),
+    CareGuideFields.ISSUES to FieldVisual(Icons.Filled.EnergySavingsLeaf, Color(0xFFD32F2F)),
+    CareGuideFields.SEASONAL to FieldVisual(Icons.Filled.TipsAndUpdates, Color(0xFFFFB74D))
+)
