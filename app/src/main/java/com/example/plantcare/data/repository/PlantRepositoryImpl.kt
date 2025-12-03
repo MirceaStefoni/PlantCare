@@ -7,7 +7,10 @@ import androidx.work.Constraints
 import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.OutOfQuotaPolicy
 import androidx.work.WorkManager
+import com.example.plantcare.data.local.CareDao
+import com.example.plantcare.data.local.CareInstructionsEntity
 import com.example.plantcare.data.local.PlantDao
 import com.example.plantcare.data.local.PlantEntity
 import com.example.plantcare.data.local.SyncState
@@ -20,6 +23,8 @@ import com.example.plantcare.data.remote.InlineData
 import com.example.plantcare.data.remote.Part
 import com.example.plantcare.data.remote.PlantRemoteDataSource
 import com.example.plantcare.data.sync.PlantSyncWorker
+import com.example.plantcare.domain.model.CareGuideFields
+import com.example.plantcare.domain.model.CareInstructions
 import com.example.plantcare.domain.model.Plant
 import com.example.plantcare.domain.repository.PlantRepository
 import com.google.gson.Gson
@@ -27,6 +32,7 @@ import com.google.gson.JsonObject
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import java.net.SocketTimeoutException
 import java.util.UUID
 
 import com.example.plantcare.BuildConfig
@@ -35,12 +41,15 @@ import android.util.Log
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.TimeoutCancellationException
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
 class PlantRepositoryImpl(
     private val plantDao: PlantDao,
     private val userDao: UserDao,
+    private val careDao: CareDao,
     private val remote: PlantRemoteDataSource,
     private val workManager: WorkManager,
     private val geminiService: GeminiService,
@@ -67,6 +76,7 @@ class PlantRepositoryImpl(
     override suspend fun delete(plantId: String) {
         val entity = plantDao.getPlantById(plantId)
         plantDao.deleteById(plantId)
+        careDao.deleteByPlantId(plantId)
         runCatching { entity?.let { remote.deletePlant(it.userId, plantId) } }
     }
 
@@ -75,6 +85,11 @@ class PlantRepositoryImpl(
         val remotePlants = runCatching { remote.fetchPlants(userId) }.getOrElse { emptyList() }
         remotePlants.forEach { entity ->
             plantDao.upsertPlant(entity.copy(sync_state = SyncState.SYNCED, last_sync_error = null))
+        }
+
+        val remoteCare = runCatching { remote.fetchCareInstructions(userId) }.getOrElse { emptyList() }
+        remoteCare.forEach { care ->
+            careDao.upsertCare(care.copy(sync_state = SyncState.SYNCED, last_sync_error = null))
         }
     }
 
@@ -133,24 +148,26 @@ class PlantRepositoryImpl(
 
         try {
             Log.d("PlantRepo", "Sending request to Gemini...")
-            val response = geminiService.generateContent(
-                apiKey = BuildConfig.GEMINI_API_KEY,
-                req = GenerateContentRequest(
-                    contents = listOf(
-                        Content(
-                            parts = listOf(
-                                Part(text = prompt),
-                                Part(
-                                    inline_data = InlineData(
-                                        mime_type = "image/jpeg",
-                                        data = base64Image
+            val response = retryOnTimeout(attempts = 2) {
+                geminiService.generateContent(
+                    apiKey = BuildConfig.GEMINI_API_KEY,
+                    req = GenerateContentRequest(
+                        contents = listOf(
+                            Content(
+                                parts = listOf(
+                                    Part(text = prompt),
+                                    Part(
+                                        inline_data = InlineData(
+                                            mime_type = "image/jpeg",
+                                            data = base64Image
+                                        )
                                     )
                                 )
                             )
                         )
                     )
                 )
-            )
+            }
             
             Log.d("PlantRepo", "Response received. Parsing...")
             val text = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
@@ -182,6 +199,82 @@ class PlantRepositoryImpl(
         }
     }
 
+    override suspend fun getCareGuide(plantId: String, forceRefresh: Boolean): CareInstructions? {
+        if (!forceRefresh) {
+            careDao.getCare(plantId)?.let { return it.toDomain() }
+        }
+
+        val plant = plantDao.getPlantById(plantId) ?: return null
+
+        val remoteExisting = runCatching { remote.fetchCareInstruction(plant.userId, plantId) }.getOrNull()
+        if (remoteExisting != null) {
+            careDao.upsertCare(remoteExisting.copy(sync_state = SyncState.SYNCED, last_sync_error = null))
+            return remoteExisting.toDomain()
+        }
+
+        if (forceRefresh) {
+            careDao.deleteByPlantId(plantId)
+        }
+
+        return null
+    }
+
+    override suspend fun generateCareGuideChunk(
+        plantId: String,
+        keys: List<String>,
+        focus: String
+    ): Map<String, String?> {
+        require(keys.isNotEmpty()) { "Care guide chunk requires at least one key" }
+        val plant = plantDao.getPlantById(plantId) ?: error("Plant not found for care guide: $plantId")
+        val prompt = buildCareGuidePrompt(plant, keys, focus)
+
+        return try {
+            val response = retryOnTimeout {
+                geminiService.generateContent(
+                    apiKey = BuildConfig.GEMINI_API_KEY,
+                    req = GenerateContentRequest(
+                        contents = listOf(Content(parts = listOf(Part(text = prompt))))
+                    )
+                )
+            }
+            val text = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
+                ?: error("Gemini response missing content")
+            val jsonString = text.extractJsonPayload().normalizeJsonPayload(keys)
+            val json = Gson().fromJson(jsonString, JsonObject::class.java)
+            keys.associateWith { key -> json.cleaned(key) }
+        } catch (e: Exception) {
+            Log.e("PlantRepo", "Failed to fetch care chunk for $keys", e)
+            throw e
+        }
+    }
+
+    override suspend fun saveCareGuide(
+        plantId: String,
+        values: Map<String, String?>
+    ): CareInstructions? {
+        val plant = plantDao.getPlantById(plantId) ?: return null
+        val now = System.currentTimeMillis()
+        val entity = CareInstructionsEntity(
+            id = plantId,
+            plantId = plantId,
+            watering_info = values[CareGuideFields.WATERING],
+            light_info = values[CareGuideFields.LIGHT],
+            temperature_info = values[CareGuideFields.TEMPERATURE],
+            humidity_info = values[CareGuideFields.HUMIDITY],
+            soil_info = values[CareGuideFields.SOIL],
+            fertilization_info = values[CareGuideFields.FERTILIZATION],
+            pruning_info = values[CareGuideFields.PRUNING],
+            common_issues = values[CareGuideFields.ISSUES],
+            seasonal_tips = values[CareGuideFields.SEASONAL],
+            fetched_at = now,
+            sync_state = SyncState.SYNCED,
+            last_sync_error = null
+        )
+        careDao.upsertCare(entity)
+        runCatching { remote.upsertCareInstructions(plant.userId, entity) }
+        return entity.toDomain()
+    }
+
     // Ensures a user row exists before inserting plants tied to that user
     private suspend fun ensureUser(userId: String) {
         if (userDao.userCount(userId) == 0) {
@@ -208,10 +301,11 @@ class PlantRepositoryImpl(
                     .setRequiredNetworkType(NetworkType.CONNECTED)
                     .build()
             )
+            .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
             .build()
         workManager.enqueueUniqueWork(
             PlantSyncWorker.UNIQUE_NAME,
-            ExistingWorkPolicy.KEEP,
+            ExistingWorkPolicy.APPEND_OR_REPLACE,
             request
         )
     }
@@ -260,4 +354,142 @@ private fun Plant.toEntity(): PlantEntity {
         sync_state = SyncState.PENDING,
         last_sync_error = null
     )
+}
+
+private fun CareInstructionsEntity.toDomain(): CareInstructions = CareInstructions(
+    plantId = plantId,
+    wateringInfo = watering_info,
+    lightInfo = light_info,
+    temperatureInfo = temperature_info,
+    humidityInfo = humidity_info,
+    soilInfo = soil_info,
+    fertilizationInfo = fertilization_info,
+    pruningInfo = pruning_info,
+    commonIssues = common_issues,
+    seasonalTips = seasonal_tips,
+    fetchedAt = fetched_at
+)
+
+private fun String.extractJsonPayload(): String =
+    substringAfter("```json", this)
+        .substringBefore("```", this)
+        .trim()
+        .ifEmpty { this.trim() }
+
+private fun JsonObject.stringOrNull(key: String): String? =
+    takeIf { has(key) && !get(key).isJsonNull }?.get(key)?.asString
+
+private fun JsonObject.cleaned(key: String): String? =
+    stringOrNull(key)?.sanitizeCareText()?.takeIf { it.isNotBlank() }
+
+private fun String.normalizeJsonPayload(keys: List<String>): String {
+    val normalized = StringBuilder("{")
+    keys.forEachIndexed { index, key ->
+        val value = extractValueForKey(key)
+        val sanitized = (value ?: "- No data.").sanitizeCareText().escapeJson()
+        normalized.append("\"").append(key).append("\":\"").append(sanitized).append("\"")
+        if (index != keys.lastIndex) normalized.append(",")
+    }
+    normalized.append("}")
+    return normalized.toString()
+}
+
+private fun String.escapeJson(): String =
+    this
+        .replace("\\", "\\\\")
+        .replace("\"", "\\\"")
+        .replace("\n", "\\n")
+        .replace("\r", "\\n")
+
+private fun buildCareGuidePrompt(
+    plant: PlantEntity,
+    keys: List<String>,
+    focus: String
+): String {
+    val schemaBlock = keys.joinToString(separator = ",\n") { "\"$it\": \"...\"" }
+    val focusLine = focus.takeIf { it.isNotBlank() }?.let { "\nFocus: $it" } ?: ""
+    return """
+        You are a strict JSON generator. Return VALID JSON only—no prose.
+        Plant: ${plant.common_name} (${plant.scientific_name ?: "unknown scientific name"}).$focusLine
+        Schema (keys fixed, values are strings):
+        {
+            $schemaBlock
+        }
+        Formatting rules:
+        - Provide newline-separated guidance with each line starting with "- ".
+        - Plain text only. No Markdown, no extra keys, no code fences.
+        - Escape any internal double quotes as \".
+        - Include only these keys: ${keys.joinToString()}.
+        - Return compact JSON on a single line without trailing commas.
+    """.trimIndent()
+}
+
+private suspend fun <T> retryOnTimeout(
+    attempts: Int = 3,
+    block: suspend () -> T
+): T {
+    var remaining = attempts
+    var lastError: Exception? = null
+    while (remaining > 0) {
+        try {
+            return withContext(Dispatchers.IO) {
+                withTimeout(30_000L) { block() }
+            }
+        } catch (e: SocketTimeoutException) {
+            lastError = e
+            remaining--
+            if (remaining == 0) throw e
+        } catch (e: TimeoutCancellationException) {
+            lastError = SocketTimeoutException("timeout")
+            remaining--
+            if (remaining == 0) throw SocketTimeoutException("timeout")
+        } catch (e: Exception) {
+            throw e
+        }
+    }
+    throw lastError ?: RuntimeException("Unknown error")
+}
+
+private fun String.extractValueForKey(key: String): String? {
+    val pattern = Regex("\"$key\"\\s*:\\s*\"")
+    val match = pattern.find(this) ?: return null
+    var index = match.range.last + 1
+    val builder = StringBuilder()
+    var escaped = false
+    while (index < length) {
+        val c = this[index]
+        if (!escaped && c == '\\') {
+            escaped = true
+        } else {
+            if (!escaped && c == '"') break
+            builder.append(c)
+            escaped = false
+        }
+        index++
+    }
+    return builder.toString().replace("\\n", "\n")
+}
+
+private fun String.sanitizeCareText(): String =
+    trim()
+        .split(Regex("(?i)(?:\\n|\\r|n-)"))
+        .map { rawLine ->
+            val noBold = rawLine.replace("**", "").trim()
+            when {
+                noBold.isBlank() -> ""
+                else -> "- " + noBold.trimStart('-', '•', ' ', '\t')
+            }
+        }
+        .filter { it.isNotBlank() }
+        .joinToString("\n")
+        .trim()
+
+private fun String.indexOfNextNonWhitespace(start: Int): Int {
+    var i = start
+    while (i < length) {
+        val c = this[i]
+        if (!c.isWhitespace()) return i
+        i++
+    }
+    return -1
 }

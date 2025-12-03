@@ -59,6 +59,9 @@ interface CareDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertCare(care: CareInstructionsEntity)
+
+    @Query("DELETE FROM care_instructions WHERE plant_id = :plantId")
+    suspend fun deleteByPlantId(plantId: String)
 }
 
 
