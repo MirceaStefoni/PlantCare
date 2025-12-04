@@ -64,4 +64,22 @@ interface CareDao {
     suspend fun deleteByPlantId(plantId: String)
 }
 
+@Dao
+interface LightMeasurementDao {
+    @Query("SELECT * FROM light_measurements WHERE plant_id = :plantId ORDER BY measured_at DESC")
+    fun observeMeasurements(plantId: String): Flow<List<LightMeasurementEntity>>
+
+    @Query("SELECT * FROM light_measurements WHERE plant_id = :plantId ORDER BY measured_at DESC")
+    suspend fun getMeasurements(plantId: String): List<LightMeasurementEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertMeasurement(measurement: LightMeasurementEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertMeasurements(measurements: List<LightMeasurementEntity>)
+
+    @Query("DELETE FROM light_measurements WHERE plant_id = :plantId")
+    suspend fun deleteByPlantId(plantId: String)
+}
+
 

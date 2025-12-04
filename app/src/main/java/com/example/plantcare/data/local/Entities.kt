@@ -80,4 +80,30 @@ data class CareInstructionsEntity(
     val last_sync_error: String? = null
 )
 
+@Entity(
+    tableName = "light_measurements",
+    indices = [Index("plant_id")],
+    foreignKeys = [ForeignKey(
+        entity = PlantEntity::class,
+        parentColumns = ["id"],
+        childColumns = ["plant_id"],
+        onDelete = ForeignKey.CASCADE
+    )]
+)
+data class LightMeasurementEntity(
+    @PrimaryKey val id: String,
+    @ColumnInfo(name = "plant_id") val plantId: String,
+    val lux_value: Double,
+    val assessment_label: String,
+    val assessment_level: String,
+    val ideal_min_lux: Double?,
+    val ideal_max_lux: Double?,
+    val ideal_description: String?,
+    val adequacy_percent: Int?,
+    val recommendations: String?,
+    val time_of_day: String?,
+    val measured_at: Long,
+    val sync_state: SyncState = SyncState.PENDING,
+    val last_sync_error: String? = null
+)
 
