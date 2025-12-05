@@ -9,9 +9,6 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface UserDao {
     @Query("SELECT * FROM users WHERE id = :userId")
-    suspend fun getUser(userId: String): UserEntity?
-
-    @Query("SELECT * FROM users WHERE id = :userId")
     suspend fun getById(userId: String): UserEntity?
 
     @Query("SELECT * FROM users WHERE email = :email")
@@ -22,9 +19,6 @@ interface UserDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(user: UserEntity)
-
-    @Query("DELETE FROM users WHERE id = :userId")
-    suspend fun deleteUser(userId: String)
 
     @Query("DELETE FROM users WHERE id = :userId")
     suspend fun deleteById(userId: String)
@@ -47,11 +41,17 @@ interface PlantDao {
     @Query("DELETE FROM plants WHERE id = :plantId")
     suspend fun deleteById(plantId: String)
 
+    // Returns plants IN the specified sync state
     @Query("SELECT * FROM plants WHERE sync_state = :state")
     suspend fun getPlantsBySyncState(state: SyncState): List<PlantEntity>
 
+    // Returns all PENDING plants (used by PlantSyncWorker)
     @Query("SELECT * FROM plants WHERE sync_state = 'PENDING'")
-    suspend fun getPlantsBySyncState(): List<PlantEntity>
+    suspend fun getPendingPlants(): List<PlantEntity>
+
+    // Returns plants NOT in the specified sync state (e.g., all unsynced plants)
+    @Query("SELECT * FROM plants WHERE sync_state != :state")
+    suspend fun getPlantsNotInSyncState(state: SyncState): List<PlantEntity>
 
     @Query("UPDATE plants SET sync_state = :state, last_sync_error = :error WHERE id = :plantId")
     suspend fun updateSyncState(plantId: String, state: SyncState, error: String?)

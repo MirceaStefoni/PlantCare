@@ -643,10 +643,10 @@ class PlantRepositoryImpl(
                     response.body?.bytes()
                 }
             } else {
-                val inputStream = context.contentResolver.openInputStream(Uri.parse(imageUrl))
-                val data = inputStream?.readBytes()
-                inputStream?.close()
-                data
+                // Use .use{} to ensure stream is closed even if readBytes() throws
+                context.contentResolver.openInputStream(Uri.parse(imageUrl))?.use { inputStream ->
+                    inputStream.readBytes()
+                }
             }
             bytes?.let { Base64.encodeToString(it, Base64.NO_WRAP) }
         } catch (e: Exception) {
