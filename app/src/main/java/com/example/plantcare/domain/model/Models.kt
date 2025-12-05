@@ -42,4 +42,39 @@ data class CareInstructions(
     val fetchedAt: Long
 )
 
+data class HealthAnalysis(
+    val id: String,
+    val plantId: String,
+    val photoUrl: String,
+    val healthStatus: String, // Healthy, Fair, Poor
+    val healthScore: Int, // 0-100
+    val statusDescription: String,
+    val issues: List<HealthIssue>,
+    val recommendations: List<HealthRecommendation>,
+    val preventionTips: List<String>,
+    val analyzedAt: Long
+)
 
+data class HealthIssue(
+    val name: String,
+    val severity: String, // Low, Medium, High
+    val description: String?
+)
+
+data class HealthRecommendation(
+    val type: String, // Watering, Light, etc.
+    val title: String,
+    val description: String
+)
+
+// Chunked health analysis results for progressive loading
+data class HealthScoreResult(
+    val healthScore: Int,
+    val healthStatus: String,
+    val statusDescription: String
+)
+
+data class HealthRecommendationsResult(
+    val recommendations: List<HealthRecommendation>,
+    val preventionTips: List<String>
+)

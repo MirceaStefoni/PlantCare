@@ -26,6 +26,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.plantcare.ui.auth.AuthViewModel
 
 import com.example.plantcare.ui.detail.EditPlantScreen
+import com.example.plantcare.ui.detail.HealthAnalysisScreen
 
 object Routes {
     const val ROOT = "root"
@@ -37,6 +38,7 @@ object Routes {
     const val DETAIL = "detail/{plantId}"
     const val EDIT_PLANT = "edit_plant/{plantId}"
     const val CARE_GUIDE = "care_guide/{plantId}"
+    const val HEALTH_ANALYSIS = "health_analysis/{plantId}"
     const val PROFILE = "profile"
 }
 
@@ -105,7 +107,8 @@ fun AppNavHost(navController: NavHostController, startDestination: String) {
                 plantId = id,
                 onBack = { navController.popBackStack() },
                 onEdit = { plantId -> navController.navigate("edit_plant/$plantId") },
-                onOpenCareGuide = { plantId -> navController.navigate("care_guide/$plantId") }
+                onOpenCareGuide = { plantId -> navController.navigate("care_guide/$plantId") },
+                onOpenHealthAnalysis = { plantId -> navController.navigate("health_analysis/$plantId") }
             )
         }
         composable(Routes.EDIT_PLANT) { backStackEntry ->
@@ -113,7 +116,7 @@ fun AppNavHost(navController: NavHostController, startDestination: String) {
             EditPlantScreen(
                 plantId = id,
                 onBack = { navController.popBackStack() },
-                onPlantDeleted = {
+                onPlantDeleted = { // Assuming EditPlantScreen callback matches this
                     navController.navigate(Routes.HOME) {
                         popUpTo(Routes.HOME) { inclusive = true }
                     }
@@ -125,6 +128,16 @@ fun AppNavHost(navController: NavHostController, startDestination: String) {
             arguments = listOf(navArgument("plantId") { type = NavType.StringType })
         ) {
             CareGuideScreen(onBack = { navController.popBackStack() })
+        }
+        composable(
+            Routes.HEALTH_ANALYSIS,
+            arguments = listOf(navArgument("plantId") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val id = backStackEntry.arguments?.getString("plantId") ?: return@composable
+            HealthAnalysisScreen(
+                plantId = id,
+                onBack = { navController.popBackStack() }
+            )
         }
         composable(Routes.PROFILE) {
             ProfileScreen(
@@ -152,5 +165,3 @@ fun AppNavHost(navController: NavHostController, startDestination: String) {
         }
     }
 }
-
-

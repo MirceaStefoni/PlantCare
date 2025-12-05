@@ -25,7 +25,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.TextFields
+import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Person
@@ -84,6 +84,11 @@ import java.util.concurrent.TimeUnit
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.rememberPermissionState
 import com.google.accompanist.permissions.isGranted
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.geometry.Offset
 
 import com.example.plantcare.ui.profile.ProfileScreen
 
@@ -97,6 +102,7 @@ fun HomeScreen(
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val plants by viewModel.plants.collectAsState()
+    val isLoading by viewModel.isLoading.collectAsState()
     var showAdd by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
@@ -240,24 +246,33 @@ fun HomeScreen(
         Box(modifier = Modifier.padding(padding)) {
             when (selectedTab) {
                 0 -> {
-                    if (plants.isEmpty()) {
-                        EmptyState(modifier = Modifier.fillMaxSize())
-                    } else {
-                        LazyVerticalGrid(
-                            columns = GridCells.Adaptive(minSize = 160.dp),
-                            modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(16.dp),
-                            horizontalArrangement = Arrangement.spacedBy(16.dp)
-                        ) {
-                            items(plants, key = { it.id }) { p ->
-                                PlantCard(
-                                    name = if (!p.nickname.isNullOrBlank()) p.nickname else p.commonName,
-                                    subtitle = if (!p.nickname.isNullOrBlank()) p.commonName else p.scientificName ?: "",
-                                    photoUrl = if (p.userPhotoUrl.isNotBlank()) p.userPhotoUrl else p.referencePhotoUrl ?: "",
-                                    updatedAt = p.updatedAt,
-                                    onClick = { onOpenPlant(p.id) }
-                                )
+                    when {
+                        isLoading -> {
+                            // Skeleton Loading State
+                            PlantGridSkeleton(modifier = Modifier.fillMaxSize())
+                        }
+                        plants.isEmpty() -> {
+                            // Empty State - only show when NOT loading and truly empty
+                            EmptyState(modifier = Modifier.fillMaxSize())
+                        }
+                        else -> {
+                            // Plants Grid
+                            LazyVerticalGrid(
+                                columns = GridCells.Adaptive(minSize = 160.dp),
+                                modifier = Modifier.fillMaxSize(),
+                                contentPadding = PaddingValues(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(16.dp),
+                                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                            ) {
+                                items(plants, key = { it.id }) { p ->
+                                    PlantCard(
+                                        name = if (!p.nickname.isNullOrBlank()) p.nickname else p.commonName,
+                                        subtitle = if (!p.nickname.isNullOrBlank()) p.commonName else p.scientificName ?: "",
+                                        photoUrl = if (p.userPhotoUrl.isNotBlank()) p.userPhotoUrl else p.referencePhotoUrl ?: "",
+                                        updatedAt = p.updatedAt,
+                                        onClick = { onOpenPlant(p.id) }
+                                    )
+                                }
                             }
                         }
                     }
@@ -343,6 +358,114 @@ private fun EmptyState(modifier: Modifier = Modifier) {
             color = MaterialTheme.colorScheme.primary,
             fontWeight = FontWeight.Medium
         )
+    }
+}
+
+@Composable
+private fun PlantGridSkeleton(modifier: Modifier = Modifier) {
+    LazyVerticalGrid(
+        columns = GridCells.Adaptive(minSize = 160.dp),
+        modifier = modifier,
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        // Show 6 skeleton cards
+        items(listOf(1, 2, 3, 4, 5, 6)) {
+            PlantCardSkeleton()
+        }
+    }
+}
+
+@Composable
+private fun PlantCardSkeleton() {
+    val infiniteTransition = rememberInfiniteTransition(label = "shimmer")
+    val shimmerTranslate by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1000f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1200)
+        ),
+        label = "shimmer"
+    )
+    
+    val shimmerColors = listOf(
+        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f),
+        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f)
+    )
+    
+    val brush = Brush.linearGradient(
+        colors = shimmerColors,
+        start = Offset(shimmerTranslate - 200f, shimmerTranslate - 200f),
+        end = Offset(shimmerTranslate, shimmerTranslate)
+    )
+    
+    Card(
+        shape = RoundedCornerShape(20.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(1f)
+        ) {
+            // Shimmer background
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(brush)
+            )
+            
+            // Skeleton timestamp chip - top left
+            Box(
+                modifier = Modifier
+                    .padding(12.dp)
+                    .align(Alignment.TopStart)
+                    .width(60.dp)
+                    .height(24.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.7f))
+            )
+            
+            // Bottom gradient with skeleton text
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .fillMaxWidth()
+                    .background(
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                Color.Transparent,
+                                Color.Black.copy(alpha = 0.5f),
+                                Color.Black.copy(alpha = 0.7f)
+                            )
+                        )
+                    )
+                    .padding(12.dp)
+            ) {
+                Column {
+                    // Name skeleton
+                    Box(
+                        modifier = Modifier
+                            .width(100.dp)
+                            .height(18.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(Color.White.copy(alpha = 0.3f))
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    // Subtitle skeleton
+                    Box(
+                        modifier = Modifier
+                            .width(70.dp)
+                            .height(12.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(Color.White.copy(alpha = 0.2f))
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -446,8 +569,6 @@ private fun AddPlantDialog(
     onAddByName: (String) -> Unit
 ) {
     val context = LocalContext.current
-    var showNameInput by remember { mutableStateOf(false) }
-    var name by remember { mutableStateOf("") }
     
     val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) onPickFromGallery(uri)
@@ -479,101 +600,36 @@ private fun AddPlantDialog(
                 modifier = Modifier.padding(bottom = 8.dp)
             )
             
-            if (!showNameInput) {
-                // Photo options
-                Text(
-                    "Choose a method to add your plant:",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                )
-                
-                    // Gallery option
-                AddPlantOptionCard(
-                    icon = getPlantIconById(0),
-                    title = "Choose from Gallery",
-                    description = "Select a photo from your device",
-                    onClick = {
-                        galleryLauncher.launch("image/*")
-                    }
-                )
-                
-                // Camera option
-                AddPlantOptionCard(
-                    icon = Icons.Filled.CameraAlt,
-                    title = "Take a Photo",
-                    description = "Capture a new image with your camera",
-                    onClick = { 
-                        if (cameraPermissionState.status.isGranted) {
-                            photoUri?.let { cameraLauncher.launch(it) }
-                        } else {
-                            cameraPermissionState.launchPermissionRequest()
-                        }
-                    }
-                )
-                
-                // Name option
-                AddPlantOptionCard(
-                    icon = Icons.Filled.TextFields,
-                    title = "Enter Plant Name",
-                    description = "Type the name if you already know it",
-                    onClick = { showNameInput = true }
-                )
-            } else {
-                // Name input
-                Text(
-                    "Enter the plant name:",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                )
-                
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("Plant Name") },
-                    placeholder = { Text("e.g., Monstera Deliciosa") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = MaterialTheme.colorScheme.primary,
-                        unfocusedBorderColor = MaterialTheme.colorScheme.outline
-                    )
-                )
-                
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 8.dp)
-                ) {
-                    OutlinedButton(
-                        onClick = { 
-                            showNameInput = false
-                            name = ""
-                        },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(16.dp)
-                    ) {
-                        Text("Back", fontWeight = FontWeight.Medium)
-                    }
-                    Button(
-                        onClick = { 
-                            if (name.isNotBlank()) {
-                                onAddByName(name)
-                            }
-                        },
-                        enabled = name.isNotBlank(),
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            contentColor = MaterialTheme.colorScheme.onPrimary
-                        )
-                    ) {
-                        Text("Add Plant", fontWeight = FontWeight.Bold)
+            // Photo options only (removed text input option)
+            Text(
+                "Choose a method to add your plant:",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+            )
+            
+            // Gallery option
+            AddPlantOptionCard(
+                icon = Icons.Filled.PhotoLibrary,
+                title = "Choose from Gallery",
+                description = "Select a photo from your device",
+                onClick = {
+                    galleryLauncher.launch("image/*")
+                }
+            )
+            
+            // Camera option
+            AddPlantOptionCard(
+                icon = Icons.Filled.CameraAlt,
+                title = "Take a Photo",
+                description = "Capture a new image with your camera",
+                onClick = { 
+                    if (cameraPermissionState.status.isGranted) {
+                        photoUri?.let { cameraLauncher.launch(it) }
+                    } else {
+                        cameraPermissionState.launchPermissionRequest()
                     }
                 }
-            }
+            )
             
             Spacer(modifier = Modifier.height(16.dp))
         }
