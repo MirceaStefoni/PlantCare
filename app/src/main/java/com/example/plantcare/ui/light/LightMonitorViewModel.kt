@@ -6,7 +6,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.plantcare.data.sensor.LightSampleResult
 import com.example.plantcare.data.sensor.LightSensorSampler
+import com.example.plantcare.domain.model.LightEnvironment
 import com.example.plantcare.domain.model.LightMeasurement
+import com.example.plantcare.domain.model.inferLightEnvironment
 import com.example.plantcare.domain.repository.PlantRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
@@ -45,7 +47,8 @@ class LightMonitorViewModel @Inject constructor(
                     it.copy(
                         plantName = plant?.commonName,
                         plantScientificName = plant?.scientificName,
-                        referencePhotoUrl = plant?.referencePhotoUrl ?: plant?.userPhotoUrl
+                        referencePhotoUrl = plant?.referencePhotoUrl ?: plant?.userPhotoUrl,
+                        environment = inferLightEnvironment(plant?.location, plant?.lightRequirements)
                     )
                 }
             }
@@ -178,7 +181,8 @@ data class LightMonitorUiState(
     val history: List<LightMeasurement> = emptyList(),
     val latestMeasurement: LightMeasurement? = null,
     val sensorAvailable: Boolean = true,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val environment: LightEnvironment = LightEnvironment.UNKNOWN
 )
 
 enum class MeasurementPhase { Idle, Sampling, Evaluating, Ready, Error }

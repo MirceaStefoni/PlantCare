@@ -55,6 +55,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
 import com.example.plantcare.data.sensor.LightSensorSampler
+import com.example.plantcare.domain.model.LightEnvironment
 import com.example.plantcare.domain.model.LightMeasurement
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -122,7 +123,8 @@ fun LightMonitorScreen(
                                 MeasurementPhase.Ready -> ResultContent(
                                     measurement = state.latestMeasurement,
                                     history = state.history,
-                                    onMeasureAgain = viewModel::startMeasurement
+                                    onMeasureAgain = viewModel::startMeasurement,
+                                    environment = state.environment
                                 )
                                 MeasurementPhase.Error -> ErrorContent(
                                     message = state.errorMessage ?: "Something went wrong.",
@@ -248,7 +250,8 @@ private fun SamplingContent(state: LightMonitorUiState) {
 private fun ResultContent(
     measurement: LightMeasurement?,
     history: List<LightMeasurement>,
-    onMeasureAgain: () -> Unit
+    onMeasureAgain: () -> Unit,
+    environment: LightEnvironment
 ) {
     if (measurement == null) {
         IdleContent(onMeasureAgain)
@@ -264,7 +267,7 @@ private fun ResultContent(
         IdealRangeCard(measurement)
         AdequacyCard(measurement)
         RecommendationsCard(measurement)
-        UnderstandingLevelsCard()
+        UnderstandingLevelsCard(environment)
         RecentMeasurementsCard(history)
         Button(
             onClick = onMeasureAgain,
@@ -507,32 +510,67 @@ private fun RecommendationsCard(measurement: LightMeasurement) {
 }
 
 @Composable
-private fun UnderstandingLevelsCard() {
+private fun UnderstandingLevelsCard(environment: LightEnvironment) {
+    val (title, levels) = when (environment) {
+        LightEnvironment.OUTDOOR -> "Understanding Outdoor Light Levels" to outdoorLevels()
+        LightEnvironment.INDOOR -> "Understanding Indoor Light Levels" to indoorLevels()
+        LightEnvironment.UNKNOWN -> "Understanding Indoor Light Levels" to indoorLevels()
+    }
     Card(
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text("Understanding Light Levels", fontWeight = FontWeight.Bold)
-            LevelRow(
-                label = "Low Light (0–5,000 lux)",
-                description = "Deep room interiors, far from windows",
-                color = Color(0xFFFFCDD2)
-            )
-            LevelRow(
-                label = "Medium Light (5,000–15,000 lux)",
-                description = "Near bright windows with indirect light",
-                color = Color(0xFFFFF59D)
-            )
-            LevelRow(
-                label = "Bright Light (15,000+ lux)",
-                description = "South-facing windows, filtered sun",
-                color = Color(0xFFC8E6C9)
-            )
+            Text(title, fontWeight = FontWeight.Bold)
+            levels.forEach { level ->
+                LevelRow(
+                    label = level.label,
+                    description = level.description,
+                    color = level.color
+                )
+            }
         }
     }
 }
+
+private data class LightLevel(val label: String, val description: String, val color: Color)
+
+private fun indoorLevels(): List<LightLevel> = listOf(
+    LightLevel(
+        label = "Low Light (0–500 lux)",
+        description = "Interior shelves, north windows, shaded corners",
+        color = Color(0xFFFFE0B2)
+    ),
+    LightLevel(
+        label = "Moderate Light (500–2,000 lux)",
+        description = "Near bright windows with filtered light",
+        color = Color(0xFFFFF59D)
+    ),
+    LightLevel(
+        label = "Bright Indirect (2,000–5,000 lux)",
+        description = "Beside south/east windows with sheer curtain",
+        color = Color(0xFFC8E6C9)
+    )
+)
+
+private fun outdoorLevels(): List<LightLevel> = listOf(
+    LightLevel(
+        label = "Shade (0–10,000 lux)",
+        description = "Covered patios, dappled tree shade",
+        color = Color(0xFFFFCDD2)
+    ),
+    LightLevel(
+        label = "Partial Sun (10,000–40,000 lux)",
+        description = "Morning sun or bright balconies",
+        color = Color(0xFFFFF59D)
+    ),
+    LightLevel(
+        label = "Full Sun (40,000+ lux)",
+        description = "Direct midday sunlight outdoors",
+        color = Color(0xFFC8E6C9)
+    )
+)
 
 @Composable
 private fun LevelRow(label: String, description: String, color: Color) {

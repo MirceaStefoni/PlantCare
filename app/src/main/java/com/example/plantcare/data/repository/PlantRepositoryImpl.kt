@@ -28,7 +28,9 @@ import com.example.plantcare.data.sync.PlantSyncWorker
 import com.example.plantcare.domain.model.CareGuideFields
 import com.example.plantcare.domain.model.CareInstructions
 import com.example.plantcare.domain.model.Plant
+import com.example.plantcare.domain.model.LightEnvironment
 import com.example.plantcare.domain.model.LightMeasurement
+import com.example.plantcare.domain.model.inferLightEnvironment
 import com.example.plantcare.domain.repository.PlantRepository
 import com.google.gson.Gson
 import com.google.gson.JsonObject
@@ -51,6 +53,7 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.TimeoutCancellationException
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import kotlin.math.roundToInt
 
 class PlantRepositoryImpl(
     private val plantDao: PlantDao,
@@ -318,16 +321,19 @@ class PlantRepositoryImpl(
             val jsonString = text.extractJsonPayload().trim().ifEmpty { error("Empty Gemini payload") }
             val json = Gson().fromJson(jsonString, JsonObject::class.java)
             val level = json.stringOrNull("assessment_level") ?: "unknown"
+            val idealMin = json.doubleOrNull("ideal_min_lux")
+            val idealMax = json.doubleOrNull("ideal_max_lux")
             val entity = LightMeasurementEntity(
                 id = UUID.randomUUID().toString(),
                 plantId = plantId,
                 lux_value = luxValue,
                 assessment_label = json.stringOrNull("assessment_label") ?: resolveAssessmentLabel(level),
                 assessment_level = level,
-                ideal_min_lux = json.doubleOrNull("ideal_min_lux"),
-                ideal_max_lux = json.doubleOrNull("ideal_max_lux"),
+                ideal_min_lux = idealMin,
+                ideal_max_lux = idealMax,
                 ideal_description = json.stringOrNull("ideal_description"),
-                adequacy_percent = json.intOrNull("adequacy_percent"),
+                adequacy_percent = calculateAdequacyPercent(luxValue, idealMin, idealMax)
+                    ?: json.intOrNull("adequacy_percent"),
                 recommendations = json.recommendationsAsBullets(),
                 time_of_day = json.stringOrNull("time_of_day") ?: timeOfDay,
                 measured_at = measurementTimestamp,
@@ -529,11 +535,31 @@ private fun buildLightMonitorPrompt(
 ): String {
     val luxDisplay = String.format(Locale.US, "%,.0f", luxValue.coerceAtLeast(0.0))
     val timestamp = SimpleDateFormat("MMM d, h:mm a", Locale.getDefault()).format(Date(measuredAt))
+    val environment = inferLightEnvironment(plant.location, plant.light_requirements)
+    val environmentLine = when (environment) {
+        LightEnvironment.INDOOR -> "Detected environment: Indoor setup based on the plant photo/location history."
+        LightEnvironment.OUTDOOR -> "Detected environment: Outdoor growing conditions (balcony / patio / garden)."
+        LightEnvironment.UNKNOWN -> "Detected environment: Not explicitly known; default to indoor-safe assumptions."
+    }
+    val environmentGuidance = when (environment) {
+        LightEnvironment.INDOOR -> """
+            - Compare readings against indoor light availability only. Ignore outdoor full-sun lux numbers.
+            - Recommend indoor-friendly adjustments (better window exposure, sheer curtains, supplemental grow light, reflective surfaces).
+        """.trimIndent()
+        LightEnvironment.OUTDOOR -> """
+            - Outdoor readings are acceptable; you may reference direct sunlight ranges when relevant.
+        """.trimIndent()
+        LightEnvironment.UNKNOWN -> """
+            - When in doubt, favor indoor-safe adjustments unless the lux reading clearly indicates outdoor full sun.
+        """.trimIndent()
+    }
     return """
         You are an indoor horticulture expert evaluating ambient light for ${plant.common_name} (${plant.scientific_name ?: "unknown scientific name"}).
         Current measurement: $luxDisplay lux.
         Measurement timestamp (local device time): $timestamp.
         Time-of-day context: $timeOfDay.
+        $environmentLine
+        Plant location field (if provided by the user): ${plant.location ?: "not specified"}.
         Return STRICT JSON with these keys and types:
         {
             "assessment_label": "Human readable summary such as Adequate Light",
@@ -554,6 +580,7 @@ private fun buildLightMonitorPrompt(
         - Recommendations must be pragmatic (move closer to window, add sheer curtain, rotate weekly, consider grow light, etc.).
         - Use the timestamp + time-of-day context to decide if darkness is expected (e.g., night cycle) before flagging issues.
         - Provide 2-3 recommendation strings; keep each under 18 words.
+        $environmentGuidance
         - JSON only. No markdown, explanations, or extra keys.
     """.trimIndent()
 }
@@ -565,6 +592,32 @@ private fun resolveAssessmentLabel(level: String?): String =
         "adequate" -> "Adequate Light"
         else -> "Light Assessment"
     }
+
+private fun calculateAdequacyPercent(
+    measuredLux: Double,
+    idealMin: Double?,
+    idealMax: Double?
+): Int? {
+    val normalizedMin = idealMin?.takeIf { it > 0 }
+    val normalizedMax = idealMax?.takeIf { it > 0 }
+
+    val (minLux, maxLux) = when {
+        normalizedMin != null && normalizedMax != null -> {
+            if (normalizedMin <= normalizedMax) normalizedMin to normalizedMax else normalizedMax to normalizedMin
+        }
+        normalizedMin != null -> normalizedMin to (normalizedMin * 1.4)
+        normalizedMax != null -> (normalizedMax * 0.6) to normalizedMax
+        else -> return null
+    }
+
+    if (minLux <= 0 || maxLux <= 0) return null
+
+    return when {
+        measuredLux < minLux -> ((measuredLux / minLux) * 100).roundToInt().coerceIn(0, 100)
+        measuredLux > maxLux -> ((maxLux / measuredLux) * 100).roundToInt().coerceIn(0, 100)
+        else -> 100
+    }
+}
 
 private suspend fun <T> retryOnTimeout(
     attempts: Int = 3,

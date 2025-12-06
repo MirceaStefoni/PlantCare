@@ -5,6 +5,7 @@ import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Upsert
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -36,7 +37,7 @@ interface PlantDao {
     @Query("SELECT * FROM plants WHERE user_id = :userId ORDER BY created_at DESC")
     fun observePlants(userId: String): Flow<List<PlantEntity>>
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Upsert
     suspend fun upsertPlant(plant: PlantEntity)
 
     @Delete
