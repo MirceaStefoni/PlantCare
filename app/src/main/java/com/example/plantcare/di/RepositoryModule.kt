@@ -32,6 +32,7 @@ object RepositoryModule {
             plantDao = db.plantDao(),
             userDao = db.userDao(),
             careDao = db.careDao(),
+            lightMeasurementDao = db.lightMeasurementDao(),
             remote = remote,
             workManager = workManager,
             geminiService = geminiService,

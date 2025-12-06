@@ -42,6 +42,7 @@ fun PlantDetailScreen(
     onBack: () -> Unit = {},
     onEdit: (String) -> Unit = {},
     onOpenCareGuide: (String) -> Unit = {},
+    onOpenLightMonitor: (String) -> Unit = {},
     viewModel: PlantDetailViewModel = hiltViewModel()
 ) {
     val plant by viewModel.plant.collectAsState()
@@ -253,7 +254,7 @@ fun PlantDetailScreen(
                     iconBgColor = Color(0xFFFFF3E0), // Light Orange bg
                     iconTint = Color(0xFFFF9800),
                     isOutlinedButton = true,
-                    onClick = { /* TODO */ }
+                    onClick = { onOpenLightMonitor(p.id) }
                 )
                 
                 Spacer(modifier = Modifier.height(40.dp))

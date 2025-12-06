@@ -5,6 +5,7 @@ import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Upsert
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -36,7 +37,7 @@ interface PlantDao {
     @Query("SELECT * FROM plants WHERE user_id = :userId ORDER BY created_at DESC")
     fun observePlants(userId: String): Flow<List<PlantEntity>>
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Upsert
     suspend fun upsertPlant(plant: PlantEntity)
 
     @Delete
@@ -61,6 +62,24 @@ interface CareDao {
     suspend fun upsertCare(care: CareInstructionsEntity)
 
     @Query("DELETE FROM care_instructions WHERE plant_id = :plantId")
+    suspend fun deleteByPlantId(plantId: String)
+}
+
+@Dao
+interface LightMeasurementDao {
+    @Query("SELECT * FROM light_measurements WHERE plant_id = :plantId ORDER BY measured_at DESC")
+    fun observeMeasurements(plantId: String): Flow<List<LightMeasurementEntity>>
+
+    @Query("SELECT * FROM light_measurements WHERE plant_id = :plantId ORDER BY measured_at DESC")
+    suspend fun getMeasurements(plantId: String): List<LightMeasurementEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertMeasurement(measurement: LightMeasurementEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertMeasurements(measurements: List<LightMeasurementEntity>)
+
+    @Query("DELETE FROM light_measurements WHERE plant_id = :plantId")
     suspend fun deleteByPlantId(plantId: String)
 }
 

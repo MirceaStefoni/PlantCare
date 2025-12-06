@@ -28,6 +28,9 @@ object DatabaseModule {
 
     @Provides
     fun provideCareDao(db: AppDatabase) = db.careDao()
+
+    @Provides
+    fun provideLightMeasurementDao(db: AppDatabase) = db.lightMeasurementDao()
 }
 
 
