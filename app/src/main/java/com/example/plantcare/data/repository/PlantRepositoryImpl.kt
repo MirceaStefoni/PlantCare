@@ -457,16 +457,13 @@ class PlantRepositoryImpl(
             ?: throw Exception("Failed to read affected area photo")
         
         val prompt = """
-            You are a plant health expert. Analyze these two images of a plant called "$plantName".
-            Image 1: The overall plant photo. Image 2: A close-up of the affected/problematic area.
+            Analyze "$plantName" health. Image 1: full plant. Image 2: PROBLEM AREA user is worried about.
             
-            Provide ONLY the overall health assessment. Return a JSON object:
-            {
-                "health_score": 0-100 (integer, 100 = perfectly healthy),
-                "health_status": "Healthy" or "Fair" or "Poor",
-                "status_description": "One sentence describing the plant's current state"
-            }
-            Return ONLY the JSON, no additional text.
+            Be STRICT - user shows problem area because something IS wrong. Check for: discoloration, wilting, pests, fungus, nutrient issues, water stress.
+            
+            Score: 80-100=healthy, 60-79=mild issues, 40-59=moderate, 20-39=severe, 0-19=critical.
+            
+            Return JSON only: {"health_score": 0-100, "health_status": "Healthy/Fair/Poor", "status_description": "one sentence"}
         """.trimIndent()
 
         val response = retryOnTimeout(attempts = 2) {
@@ -510,20 +507,13 @@ class PlantRepositoryImpl(
             ?: throw Exception("Failed to read affected area photo")
         
         val prompt = """
-            You are a plant health expert. Analyze these two images of a plant called "$plantName".
-            Image 1: The overall plant. Image 2: Close-up of the affected area.
+            Identify issues in "$plantName". Image 1: full plant. Image 2: PROBLEM AREA.
             
-            Identify any health issues. Return a JSON object:
-            {
-                "issues": [
-                    {
-                        "name": "Issue name (e.g., 'Yellow Leaves', 'Root Rot')",
-                        "severity": "Low" or "Medium" or "High",
-                        "description": "Detailed description of the issue and what causes it"
-                    }
-                ]
-            }
-            If the plant is healthy, return an empty issues array. Return ONLY the JSON.
+            User IS concerned - find what's wrong. Check: leaf damage, pests, fungus, nutrient deficiency, water stress.
+            
+            Severity: Low=cosmetic, Medium=needs attention, High=serious threat.
+            
+            Return JSON only: {"issues": [{"name": "issue name", "severity": "Low/Medium/High", "description": "brief cause and what you see"}]}
         """.trimIndent()
 
         val response = retryOnTimeout(attempts = 2) {
@@ -572,24 +562,12 @@ class PlantRepositoryImpl(
             ?: throw Exception("Failed to read affected area photo")
         
         val prompt = """
-            You are a plant health expert. Analyze these two images of a plant called "$plantName".
-            Image 1: The overall plant. Image 2: Close-up of the affected area.
+            Provide treatment for "$plantName". Image 1: full plant. Image 2: PROBLEM AREA.
             
-            Provide care recommendations and prevention tips. Return a JSON object:
-            {
-                "recommendations": [
-                    {
-                        "type": "Category (Watering, Light, Fertilizer, Treatment, etc.)",
-                        "title": "Short action title",
-                        "description": "Detailed recommendation on what to do"
-                    }
-                ],
-                "prevention_tips": [
-                    "Tip 1 for preventing future issues",
-                    "Tip 2 for maintaining plant health"
-                ]
-            }
-            Return ONLY the JSON.
+            Give 2-3 actionable recommendations. Types: Treatment, Watering, Light, Fertilizer, Pest Control.
+            Also give 2 prevention tips.
+            
+            Return JSON only: {"recommendations": [{"type": "category", "title": "action", "description": "brief how-to"}], "prevention_tips": ["tip1", "tip2"]}
         """.trimIndent()
 
         val response = retryOnTimeout(attempts = 2) {

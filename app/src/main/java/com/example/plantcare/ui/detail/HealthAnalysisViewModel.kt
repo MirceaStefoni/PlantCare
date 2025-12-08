@@ -4,13 +4,11 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.plantcare.domain.model.HealthIssue
-import com.example.plantcare.domain.model.HealthRecommendation
 import com.example.plantcare.domain.model.HealthRecommendationsResult
 import com.example.plantcare.domain.model.HealthScoreResult
 import com.example.plantcare.domain.model.Plant
 import com.example.plantcare.domain.repository.PlantRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -94,53 +92,51 @@ class HealthAnalysisViewModel @Inject constructor(
         _scoreError.value = null
         _issuesError.value = null
         _recommendationsError.value = null
+        
+        // Set all loading states to true IMMEDIATELY to prevent glitchy UI
+        _isLoadingScore.value = true
+        _isLoadingIssues.value = true
+        _isLoadingRecommendations.value = true
 
         val plantPhotoUrl = currentPlant.userPhotoUrl
         val affectedAreaUriString = affectedUri.toString()
         val plantName = currentPlant.commonName
 
-        // Launch all three analyses in parallel
+        // Sequential calls to avoid overloading connection pools and causing timeouts
         viewModelScope.launch {
-            // Health Score (usually fastest, shown first)
-            launch {
-                _isLoadingScore.value = true
-                try {
-                    _scoreResult.value = repository.analyzeHealthScore(
-                        plantPhotoUrl, affectedAreaUriString, plantName
-                    )
-                } catch (e: Exception) {
-                    _scoreError.value = e.message ?: "Failed to analyze health score"
-                } finally {
-                    _isLoadingScore.value = false
-                }
+            // Step 1: Health Score (loading already set above)
+            try {
+                _scoreResult.value = repository.analyzeHealthScore(
+                    plantPhotoUrl, affectedAreaUriString, plantName
+                )
+            } catch (e: Exception) {
+                _scoreError.value = e.message ?: "Failed to analyze health score"
+            } finally {
+                _isLoadingScore.value = false
             }
 
-            // Issues (medium priority)
-            launch {
-                _isLoadingIssues.value = true
-                try {
-                    _issuesResult.value = repository.analyzeHealthIssues(
-                        plantPhotoUrl, affectedAreaUriString, plantName
-                    )
-                } catch (e: Exception) {
-                    _issuesError.value = e.message ?: "Failed to analyze issues"
-                } finally {
-                    _isLoadingIssues.value = false
-                }
+            // Step 2: Issues (only after score completes)
+            _isLoadingIssues.value = true
+            try {
+                _issuesResult.value = repository.analyzeHealthIssues(
+                    plantPhotoUrl, affectedAreaUriString, plantName
+                )
+            } catch (e: Exception) {
+                _issuesError.value = e.message ?: "Failed to analyze issues"
+            } finally {
+                _isLoadingIssues.value = false
             }
 
-            // Recommendations (can take longer)
-            launch {
-                _isLoadingRecommendations.value = true
-                try {
-                    _recommendationsResult.value = repository.analyzeHealthRecommendations(
-                        plantPhotoUrl, affectedAreaUriString, plantName
-                    )
-                } catch (e: Exception) {
-                    _recommendationsError.value = e.message ?: "Failed to get recommendations"
-                } finally {
-                    _isLoadingRecommendations.value = false
-                }
+            // Step 3: Recommendations (only after issues complete)
+            _isLoadingRecommendations.value = true
+            try {
+                _recommendationsResult.value = repository.analyzeHealthRecommendations(
+                    plantPhotoUrl, affectedAreaUriString, plantName
+                )
+            } catch (e: Exception) {
+                _recommendationsError.value = e.message ?: "Failed to get recommendations"
+            } finally {
+                _isLoadingRecommendations.value = false
             }
         }
     }

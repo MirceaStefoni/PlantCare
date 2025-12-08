@@ -47,6 +47,33 @@ import java.util.*
 private val ForestGreen = Color(0xFF2D6A4F)
 private val LightGreen = Color(0xFF95D5B2)
 
+/**
+ * Cleans markdown formatting from text returned by Gemini API.
+ * Removes: **bold**, *italic*, numbered lists (1. 2.), bullet points (- *), etc.
+ */
+private fun cleanMarkdown(text: String): String {
+    return text
+        // Remove bold markers **text** or __text__
+        .replace(Regex("\\*\\*([^*]+)\\*\\*"), "$1")
+        .replace(Regex("__([^_]+)__"), "$1")
+        // Remove italic markers *text* or _text_
+        .replace(Regex("(?<![*])\\*([^*]+)\\*(?![*])"), "$1")
+        .replace(Regex("(?<![_])_([^_]+)_(?![_])"), "$1")
+        // Remove numbered list prefixes (1. 2. etc.) at the start of lines
+        .replace(Regex("^\\d+\\.\\s*", RegexOption.MULTILINE), "")
+        // Remove bullet points (- or *) at the start of lines
+        .replace(Regex("^[-*]\\s+", RegexOption.MULTILINE), "")
+        // Remove headers (# ## ###)
+        .replace(Regex("^#+\\s*", RegexOption.MULTILINE), "")
+        // Remove code backticks
+        .replace(Regex("`([^`]+)`"), "$1")
+        // Clean up multiple spaces
+        .replace(Regex("\\s+"), " ")
+        // Clean up multiple newlines
+        .replace(Regex("\n{3,}"), "\n\n")
+        .trim()
+}
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalPermissionsApi::class)
 @Composable
 fun HealthAnalysisScreen(
@@ -586,7 +613,7 @@ private fun HealthScoreSection(
                 )
                 
                 Text(
-                    result.statusDescription,
+                    cleanMarkdown(result.statusDescription),
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 4.dp, start = 24.dp, end = 24.dp),
@@ -734,7 +761,7 @@ private fun RecommendationsSection(
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
-                                    tip,
+                                    cleanMarkdown(tip),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     lineHeight = 20.sp
@@ -907,7 +934,7 @@ private fun IssueCard(issue: HealthIssue) {
                 
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        issue.name,
+                        cleanMarkdown(issue.name),
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.SemiBold
                     )
@@ -917,7 +944,7 @@ private fun IssueCard(issue: HealthIssue) {
                         shape = RoundedCornerShape(4.dp)
                     ) {
                         Text(
-                            issue.severity,
+                            cleanMarkdown(issue.severity),
                             style = MaterialTheme.typography.labelSmall,
                             color = Color.White,
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
@@ -942,7 +969,7 @@ private fun IssueCard(issue: HealthIssue) {
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        issue.description ?: "No details available.",
+                        cleanMarkdown(issue.description ?: "No details available."),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         lineHeight = 20.sp
@@ -992,7 +1019,7 @@ private fun RecommendationCard(recommendation: HealthRecommendation) {
             
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    recommendation.title,
+                    cleanMarkdown(recommendation.title),
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurface
@@ -1001,7 +1028,7 @@ private fun RecommendationCard(recommendation: HealthRecommendation) {
                 Spacer(modifier = Modifier.height(4.dp))
                 
                 Text(
-                    recommendation.description,
+                    cleanMarkdown(recommendation.description),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     lineHeight = 20.sp
