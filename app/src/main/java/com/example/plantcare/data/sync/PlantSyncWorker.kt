@@ -38,7 +38,7 @@ class PlantSyncWorker(
     private val appContext = context.applicationContext
 
     override suspend fun doWork(): Result {
-        val pending = plantDao.getPlantsBySyncState()
+        val pending = plantDao.getPendingPlants()
         if (pending.isEmpty()) return Result.success()
 
         val errors = coroutineScope {
