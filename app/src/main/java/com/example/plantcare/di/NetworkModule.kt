@@ -1,6 +1,8 @@
 package com.example.plantcare.di
 
 import com.example.plantcare.data.remote.GeminiService
+import com.example.plantcare.data.remote.openweather.OpenWeatherGeoService
+import com.example.plantcare.data.remote.openweather.OpenWeatherService
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -26,7 +28,8 @@ object NetworkModule {
 
     @Provides
     @Singleton
-    fun provideRetrofit(client: OkHttpClient): Retrofit = Retrofit.Builder()
+    @GeminiRetrofit
+    fun provideGeminiRetrofit(client: OkHttpClient): Retrofit = Retrofit.Builder()
         .baseUrl("https://generativelanguage.googleapis.com/v1beta/")
         .client(client)
         .addConverterFactory(GsonConverterFactory.create())
@@ -34,7 +37,27 @@ object NetworkModule {
 
     @Provides
     @Singleton
-    fun provideGemini(retrofit: Retrofit): GeminiService = retrofit.create(GeminiService::class.java)
+    fun provideGemini(@GeminiRetrofit retrofit: Retrofit): GeminiService =
+        retrofit.create(GeminiService::class.java)
+
+    @Provides
+    @Singleton
+    @OpenWeatherRetrofit
+    fun provideOpenWeatherRetrofit(client: OkHttpClient): Retrofit = Retrofit.Builder()
+        .baseUrl("https://api.openweathermap.org/")
+        .client(client)
+        .addConverterFactory(GsonConverterFactory.create())
+        .build()
+
+    @Provides
+    @Singleton
+    fun provideOpenWeatherGeo(@OpenWeatherRetrofit retrofit: Retrofit): OpenWeatherGeoService =
+        retrofit.create(OpenWeatherGeoService::class.java)
+
+    @Provides
+    @Singleton
+    fun provideOpenWeather(@OpenWeatherRetrofit retrofit: Retrofit): OpenWeatherService =
+        retrofit.create(OpenWeatherService::class.java)
 }
 
 

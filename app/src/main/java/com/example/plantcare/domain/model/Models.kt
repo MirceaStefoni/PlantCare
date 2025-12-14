@@ -78,3 +78,24 @@ data class HealthRecommendationsResult(
     val recommendations: List<HealthRecommendation>,
     val preventionTips: List<String>
 )
+
+data class OutdoorCheck(
+    val id: String,
+    val plantId: String,
+    val cityName: String?,
+    val latitude: Double,
+    val longitude: Double,
+    val tempC: Double,
+    val feelsLikeC: Double,
+    val humidityPercent: Int,
+    val windKmh: Double,
+    val uvIndex: Double?,
+    val minTempNext24hC: Double?,
+    val weatherDescription: String?,
+    val verdict: String,
+    val verdictColor: String,
+    val analysis: String,
+    val warnings: List<String>,
+    val recommendations: List<String>,
+    val checkedAt: Long
+)

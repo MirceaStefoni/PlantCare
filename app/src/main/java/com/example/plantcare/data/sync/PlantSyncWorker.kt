@@ -4,6 +4,8 @@ import android.content.Context
 import android.net.Uri
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import com.example.plantcare.data.local.OutdoorCheckDao
+import com.example.plantcare.data.local.OutdoorCheckEntity
 import com.example.plantcare.data.local.PlantDao
 import com.example.plantcare.data.local.PlantEntity
 import com.example.plantcare.data.local.SyncState
@@ -27,22 +29,26 @@ class PlantSyncWorker(
     @InstallIn(SingletonComponent::class)
     interface SyncWorkerEntryPoint {
         fun plantDao(): PlantDao
+        fun outdoorCheckDao(): OutdoorCheckDao
         fun plantRemoteDataSource(): PlantRemoteDataSource
         fun firebaseStorage(): FirebaseStorage
     }
 
     private val entryPoint = EntryPointAccessors.fromApplication(context.applicationContext, SyncWorkerEntryPoint::class.java)
     private val plantDao = entryPoint.plantDao()
+    private val outdoorCheckDao = entryPoint.outdoorCheckDao()
     private val remote = entryPoint.plantRemoteDataSource()
     private val storage = entryPoint.firebaseStorage()
     private val appContext = context.applicationContext
 
     override suspend fun doWork(): Result {
-        val pending = plantDao.getPendingPlants()
-        if (pending.isEmpty()) return Result.success()
+        val pendingPlants = plantDao.getPendingPlants()
+        val pendingOutdoorChecks = outdoorCheckDao.getPendingChecks()
+
+        if (pendingPlants.isEmpty() && pendingOutdoorChecks.isEmpty()) return Result.success()
 
         val errors = coroutineScope {
-            pending.map { entity ->
+            val plantJobs = pendingPlants.map { entity ->
                 async {
                     runCatching {
                         val prepared = uploadPhotoIfNeeded(entity)
@@ -59,8 +65,27 @@ class PlantSyncWorker(
                         throwable
                     }
                 }
-            }.awaitAll().filterNotNull()
+            }
+
+            val outdoorJobs = pendingOutdoorChecks.map { check ->
+                async {
+                    runCatching {
+                        val userId = pendingPlants.firstOrNull { it.id == check.plantId }?.userId
+                            ?: plantDao.getPlantById(check.plantId)?.userId
+                            ?: return@async null
+                        remote.upsertOutdoorCheck(userId, check)
+                        outdoorCheckDao.upsertCheck(check.copy(sync_state = SyncState.SYNCED, last_sync_error = null))
+                        null
+                    }.getOrElse { throwable ->
+                        outdoorCheckDao.updateSyncState(check.id, SyncState.FAILED, throwable.message)
+                        throwable
+                    }
+                }
+            }
+
+            (plantJobs + outdoorJobs).awaitAll().filterNotNull()
         }
+
         return if (errors.isEmpty()) Result.success() else Result.retry()
     }
 

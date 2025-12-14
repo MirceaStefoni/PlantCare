@@ -104,3 +104,36 @@ data class HealthAnalysisEntity(
     val sync_state: SyncState = SyncState.PENDING,
     val last_sync_error: String? = null
 )
+
+@Entity(
+    tableName = "outdoor_checks",
+    indices = [Index("plant_id")],
+    foreignKeys = [ForeignKey(
+        entity = PlantEntity::class,
+        parentColumns = ["id"],
+        childColumns = ["plant_id"],
+        onDelete = ForeignKey.CASCADE
+    )]
+)
+data class OutdoorCheckEntity(
+    @PrimaryKey val id: String,
+    @ColumnInfo(name = "plant_id") val plantId: String,
+    val city_name: String?,
+    val latitude: Double,
+    val longitude: Double,
+    val temp_c: Double,
+    val feels_like_c: Double,
+    val humidity_percent: Int,
+    val wind_kmh: Double,
+    val uv_index: Double?,
+    val min_temp_next_24h_c: Double?,
+    val weather_description: String?,
+    val verdict: String,
+    val verdict_color: String,
+    val analysis: String,
+    val warnings_json: String,
+    val recommendations_json: String,
+    val checked_at: Long,
+    val sync_state: SyncState = SyncState.PENDING,
+    val last_sync_error: String? = null
+)

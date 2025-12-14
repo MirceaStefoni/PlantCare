@@ -5,6 +5,7 @@ import com.example.plantcare.domain.model.HealthAnalysis
 import com.example.plantcare.domain.model.HealthIssue
 import com.example.plantcare.domain.model.HealthRecommendationsResult
 import com.example.plantcare.domain.model.HealthScoreResult
+import com.example.plantcare.domain.model.OutdoorCheck
 import com.example.plantcare.domain.model.Plant
 import kotlinx.coroutines.flow.Flow
 
@@ -43,4 +44,19 @@ interface PlantRepository {
         affectedAreaUri: String,
         plantName: String
     ): HealthRecommendationsResult
+
+    // Outdoor Environment Check
+    fun observeOutdoorChecks(plantId: String): Flow<List<OutdoorCheck>>
+    suspend fun getOutdoorChecks(plantId: String): List<OutdoorCheck>
+    suspend fun runOutdoorEnvironmentCheckFromCoordinates(
+        plantId: String,
+        latitude: Double,
+        longitude: Double,
+        cityName: String? = null
+    ): OutdoorCheck
+
+    suspend fun runOutdoorEnvironmentCheckFromCity(
+        plantId: String,
+        cityQuery: String
+    ): OutdoorCheck
 }

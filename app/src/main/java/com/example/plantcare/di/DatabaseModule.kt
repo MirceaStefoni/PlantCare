@@ -31,4 +31,7 @@ object DatabaseModule {
 
     @Provides
     fun provideHealthAnalysisDao(db: AppDatabase) = db.healthAnalysisDao()
+
+    @Provides
+    fun provideOutdoorCheckDao(db: AppDatabase) = db.outdoorCheckDao()
 }

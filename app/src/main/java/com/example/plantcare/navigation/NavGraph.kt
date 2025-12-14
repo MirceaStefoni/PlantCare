@@ -27,6 +27,7 @@ import com.example.plantcare.ui.auth.AuthViewModel
 
 import com.example.plantcare.ui.detail.EditPlantScreen
 import com.example.plantcare.ui.detail.HealthAnalysisScreen
+import com.example.plantcare.ui.outdoor.OutdoorCheckScreen
 
 object Routes {
     const val ROOT = "root"
@@ -39,6 +40,7 @@ object Routes {
     const val EDIT_PLANT = "edit_plant/{plantId}"
     const val CARE_GUIDE = "care_guide/{plantId}"
     const val HEALTH_ANALYSIS = "health_analysis/{plantId}"
+    const val OUTDOOR_CHECK = "outdoor_check/{plantId}"
     const val PROFILE = "profile"
 }
 
@@ -108,7 +110,8 @@ fun AppNavHost(navController: NavHostController, startDestination: String) {
                 onBack = { navController.popBackStack() },
                 onEdit = { plantId -> navController.navigate("edit_plant/$plantId") },
                 onOpenCareGuide = { plantId -> navController.navigate("care_guide/$plantId") },
-                onOpenHealthAnalysis = { plantId -> navController.navigate("health_analysis/$plantId") }
+                onOpenHealthAnalysis = { plantId -> navController.navigate("health_analysis/$plantId") },
+                onOpenOutdoorCheck = { plantId -> navController.navigate("outdoor_check/$plantId") }
             )
         }
         composable(Routes.EDIT_PLANT) { backStackEntry ->
@@ -135,6 +138,16 @@ fun AppNavHost(navController: NavHostController, startDestination: String) {
         ) { backStackEntry ->
             val id = backStackEntry.arguments?.getString("plantId") ?: return@composable
             HealthAnalysisScreen(
+                plantId = id,
+                onBack = { navController.popBackStack() }
+            )
+        }
+        composable(
+            Routes.OUTDOOR_CHECK,
+            arguments = listOf(navArgument("plantId") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val id = backStackEntry.arguments?.getString("plantId") ?: return@composable
+            OutdoorCheckScreen(
                 plantId = id,
                 onBack = { navController.popBackStack() }
             )
