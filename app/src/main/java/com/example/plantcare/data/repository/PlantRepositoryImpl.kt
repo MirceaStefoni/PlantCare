@@ -48,9 +48,11 @@ import com.example.plantcare.BuildConfig
 import android.util.Log
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.TimeoutCancellationException
+import retrofit2.HttpException
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import kotlin.math.roundToInt
@@ -625,6 +627,7 @@ private suspend fun <T> retryOnTimeout(
 ): T {
     var remaining = attempts
     var lastError: Exception? = null
+    var attemptNumber = 0
     while (remaining > 0) {
         try {
             return withContext(Dispatchers.IO) {
@@ -633,11 +636,28 @@ private suspend fun <T> retryOnTimeout(
         } catch (e: SocketTimeoutException) {
             lastError = e
             remaining--
+            attemptNumber++
             if (remaining == 0) throw e
+            Log.w("PlantRepo", "SocketTimeout, retrying... (attempt $attemptNumber)")
         } catch (e: TimeoutCancellationException) {
             lastError = SocketTimeoutException("timeout")
             remaining--
+            attemptNumber++
             if (remaining == 0) throw SocketTimeoutException("timeout")
+            Log.w("PlantRepo", "Coroutine timeout, retrying... (attempt $attemptNumber)")
+        } catch (e: HttpException) {
+            // Handle 503 Service Unavailable with exponential backoff
+            if (e.code() == 503) {
+                lastError = e
+                remaining--
+                attemptNumber++
+                if (remaining == 0) throw e
+                val delayMs = (1000L * (1 shl (attemptNumber - 1))).coerceAtMost(8000L) // 1s, 2s, 4s, max 8s
+                Log.w("PlantRepo", "HTTP 503 Service Unavailable, retrying in ${delayMs}ms... (attempt $attemptNumber)")
+                delay(delayMs)
+            } else {
+                throw e
+            }
         } catch (e: Exception) {
             throw e
         }
