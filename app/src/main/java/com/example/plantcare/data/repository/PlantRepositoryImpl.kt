@@ -12,6 +12,8 @@ import com.example.plantcare.data.local.CareDao
 import com.example.plantcare.data.local.CareInstructionsEntity
 import com.example.plantcare.data.local.PlantDao
 import com.example.plantcare.data.local.PlantEntity
+import com.example.plantcare.data.local.LightMeasurementDao
+import com.example.plantcare.data.local.LightMeasurementEntity
 import com.example.plantcare.data.local.SyncState
 import com.example.plantcare.data.local.UserDao
 import com.example.plantcare.data.local.UserEntity
@@ -30,6 +32,9 @@ import com.example.plantcare.domain.model.HealthRecommendation
 import com.example.plantcare.domain.model.HealthRecommendationsResult
 import com.example.plantcare.domain.model.HealthScoreResult
 import com.example.plantcare.domain.model.Plant
+import com.example.plantcare.domain.model.LightEnvironment
+import com.example.plantcare.domain.model.LightMeasurement
+import com.example.plantcare.domain.model.inferLightEnvironment
 import com.example.plantcare.domain.repository.PlantRepository
 import com.google.gson.JsonArray
 import com.google.gson.Gson
@@ -38,6 +43,9 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import java.net.SocketTimeoutException
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.UUID
 
 import com.example.plantcare.BuildConfig
@@ -45,16 +53,20 @@ import com.example.plantcare.BuildConfig
 import android.util.Log
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.TimeoutCancellationException
+import retrofit2.HttpException
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import kotlin.math.roundToInt
 
 class PlantRepositoryImpl(
     private val plantDao: PlantDao,
     private val userDao: UserDao,
     private val careDao: CareDao,
+    private val lightMeasurementDao: LightMeasurementDao,
     private val remote: PlantRemoteDataSource,
     private val workManager: WorkManager,
     private val geminiService: GeminiService,
@@ -102,6 +114,7 @@ class PlantRepositoryImpl(
         val entity = plantDao.getPlantById(plantId)
         plantDao.deleteById(plantId)
         careDao.deleteByPlantId(plantId)
+        lightMeasurementDao.deleteByPlantId(plantId)
         runCatching { entity?.let { remote.deletePlant(it.userId, plantId) } }
     }
 
@@ -115,6 +128,11 @@ class PlantRepositoryImpl(
         val remoteCare = runCatching { remote.fetchCareInstructions(userId) }.getOrElse { emptyList() }
         remoteCare.forEach { care ->
             careDao.upsertCare(care.copy(sync_state = SyncState.SYNCED, last_sync_error = null))
+        }
+
+        val remoteMeasurements = runCatching { remote.fetchLightMeasurements(userId) }.getOrElse { emptyList() }
+        remoteMeasurements.forEach { measurement ->
+            lightMeasurementDao.upsertMeasurement(measurement.copy(sync_state = SyncState.SYNCED, last_sync_error = null))
         }
     }
 
@@ -298,6 +316,61 @@ class PlantRepositoryImpl(
         careDao.upsertCare(entity)
         runCatching { remote.upsertCareInstructions(plant.userId, entity) }
         return entity.toDomain()
+    }
+
+    override fun observeLightMeasurements(plantId: String): Flow<List<LightMeasurement>> =
+        lightMeasurementDao.observeMeasurements(plantId).map { list -> list.map { it.toDomain() } }
+
+    override suspend fun getLightMeasurements(plantId: String): List<LightMeasurement> =
+        lightMeasurementDao.getMeasurements(plantId).map { it.toDomain() }
+
+    override suspend fun evaluateLightConditions(
+        plantId: String,
+        luxValue: Double,
+        timeOfDay: String,
+        measurementTimestamp: Long
+    ): LightMeasurement? {
+        if (luxValue.isNaN() || luxValue.isInfinite()) return null
+        val plant = plantDao.getPlantById(plantId) ?: return null
+        val prompt = buildLightMonitorPrompt(plant, luxValue, timeOfDay, measurementTimestamp)
+
+        return runCatching {
+            val response = retryOnTimeout {
+                geminiService.generateContent(
+                    apiKey = BuildConfig.GEMINI_API_KEY,
+                    req = GenerateContentRequest(
+                        contents = listOf(Content(parts = listOf(Part(text = prompt))))
+                    )
+                )
+            }
+            val text = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
+                ?: error("Gemini response missing content")
+            val jsonString = text.extractJsonPayload().trim().ifEmpty { error("Empty Gemini payload") }
+            val json = Gson().fromJson(jsonString, JsonObject::class.java)
+            val level = json.stringOrNull("assessment_level") ?: "unknown"
+            val idealMin = json.doubleOrNull("ideal_min_lux")
+            val idealMax = json.doubleOrNull("ideal_max_lux")
+            val entity = LightMeasurementEntity(
+                id = UUID.randomUUID().toString(),
+                plantId = plantId,
+                lux_value = luxValue,
+                assessment_label = json.stringOrNull("assessment_label") ?: resolveAssessmentLabel(level),
+                assessment_level = level,
+                ideal_min_lux = idealMin,
+                ideal_max_lux = idealMax,
+                ideal_description = json.stringOrNull("ideal_description"),
+                adequacy_percent = calculateAdequacyPercent(luxValue, idealMin, idealMax)
+                    ?: json.intOrNull("adequacy_percent"),
+                recommendations = json.recommendationsAsBullets(),
+                time_of_day = json.stringOrNull("time_of_day") ?: timeOfDay,
+                measured_at = measurementTimestamp,
+                sync_state = SyncState.PENDING,
+                last_sync_error = null
+            )
+            lightMeasurementDao.upsertMeasurement(entity)
+            runCatching { remote.upsertLightMeasurement(plant.userId, entity) }
+            entity.toDomain()
+        }.onFailure { Log.e("PlantRepo", "Failed to evaluate light for $plantId", it) }.getOrNull()
     }
 
     // Legacy method - kept for reference but no longer used
@@ -728,6 +801,38 @@ private fun CareInstructionsEntity.toDomain(): CareInstructions = CareInstructio
     fetchedAt = fetched_at
 )
 
+private fun LightMeasurementEntity.toDomain(): LightMeasurement = LightMeasurement(
+    id = id,
+    plantId = plantId,
+    luxValue = lux_value,
+    assessmentLabel = assessment_label,
+    assessmentLevel = assessment_level,
+    idealMinLux = ideal_min_lux,
+    idealMaxLux = ideal_max_lux,
+    idealDescription = ideal_description,
+    adequacyPercent = adequacy_percent,
+    recommendations = recommendations,
+    timeOfDay = time_of_day,
+    measuredAt = measured_at
+)
+
+private fun LightMeasurement.toEntity(): LightMeasurementEntity = LightMeasurementEntity(
+    id = id,
+    plantId = plantId,
+    lux_value = luxValue,
+    assessment_label = assessmentLabel,
+    assessment_level = assessmentLevel,
+    ideal_min_lux = idealMinLux,
+    ideal_max_lux = idealMaxLux,
+    ideal_description = idealDescription,
+    adequacy_percent = adequacyPercent,
+    recommendations = recommendations,
+    time_of_day = timeOfDay,
+    measured_at = measuredAt,
+    sync_state = SyncState.PENDING,
+    last_sync_error = null
+)
+
 private fun String.extractJsonPayload(): String =
     substringAfter("```json", this)
         .substringBefore("```", this)
@@ -782,12 +887,105 @@ private fun buildCareGuidePrompt(
     """.trimIndent()
 }
 
+private fun buildLightMonitorPrompt(
+    plant: PlantEntity,
+    luxValue: Double,
+    timeOfDay: String,
+    measuredAt: Long
+): String {
+    val luxDisplay = String.format(Locale.US, "%,.0f", luxValue.coerceAtLeast(0.0))
+    val timestamp = SimpleDateFormat("MMM d, h:mm a", Locale.getDefault()).format(Date(measuredAt))
+    val environment = inferLightEnvironment(plant.location, plant.light_requirements)
+    val environmentLine = when (environment) {
+        LightEnvironment.INDOOR -> "Detected environment: Indoor setup based on the plant photo/location history."
+        LightEnvironment.OUTDOOR -> "Detected environment: Outdoor growing conditions (balcony / patio / garden)."
+        LightEnvironment.UNKNOWN -> "Detected environment: Not explicitly known; default to indoor-safe assumptions."
+    }
+    val environmentGuidance = when (environment) {
+        LightEnvironment.INDOOR -> """
+            - Compare readings against indoor light availability only. Ignore outdoor full-sun lux numbers.
+            - Recommend indoor-friendly adjustments (better window exposure, sheer curtains, supplemental grow light, reflective surfaces).
+        """.trimIndent()
+        LightEnvironment.OUTDOOR -> """
+            - Outdoor readings are acceptable; you may reference direct sunlight ranges when relevant.
+        """.trimIndent()
+        LightEnvironment.UNKNOWN -> """
+            - When in doubt, favor indoor-safe adjustments unless the lux reading clearly indicates outdoor full sun.
+        """.trimIndent()
+    }
+    return """
+        You are an indoor horticulture expert evaluating ambient light for ${plant.common_name} (${plant.scientific_name ?: "unknown scientific name"}).
+        Current measurement: $luxDisplay lux.
+        Measurement timestamp (local device time): $timestamp.
+        Time-of-day context: $timeOfDay.
+        $environmentLine
+        Plant location field (if provided by the user): ${plant.location ?: "not specified"}.
+        Return STRICT JSON with these keys and types:
+        {
+            "assessment_label": "Human readable summary such as Adequate Light",
+            "assessment_level": "too_low | adequate | too_high",
+            "ideal_min_lux": 0,
+            "ideal_max_lux": 0,
+            "ideal_description": "≤12 words describing the target lighting (e.g., Bright Indirect Light)",
+            "adequacy_percent": 0,
+            "recommendations": [
+                "Short actionable step 1",
+                "Short actionable step 2",
+                "Optional step 3"
+            ],
+            "time_of_day": "Normalize to Morning / Afternoon / Evening / Night"
+        }
+        Guidance:
+        - Base lux range on the plant's natural habitat and needs.
+        - Recommendations must be pragmatic (move closer to window, add sheer curtain, rotate weekly, consider grow light, etc.).
+        - Use the timestamp + time-of-day context to decide if darkness is expected (e.g., night cycle) before flagging issues.
+        - Provide 2-3 recommendation strings; keep each under 18 words.
+        $environmentGuidance
+        - JSON only. No markdown, explanations, or extra keys.
+    """.trimIndent()
+}
+
+private fun resolveAssessmentLabel(level: String?): String =
+    when (level?.lowercase()) {
+        "too_low" -> "Too Low"
+        "too_high" -> "Too High"
+        "adequate" -> "Adequate Light"
+        else -> "Light Assessment"
+    }
+
+private fun calculateAdequacyPercent(
+    measuredLux: Double,
+    idealMin: Double?,
+    idealMax: Double?
+): Int? {
+    val normalizedMin = idealMin?.takeIf { it > 0 }
+    val normalizedMax = idealMax?.takeIf { it > 0 }
+
+    val (minLux, maxLux) = when {
+        normalizedMin != null && normalizedMax != null -> {
+            if (normalizedMin <= normalizedMax) normalizedMin to normalizedMax else normalizedMax to normalizedMin
+        }
+        normalizedMin != null -> normalizedMin to (normalizedMin * 1.4)
+        normalizedMax != null -> (normalizedMax * 0.6) to normalizedMax
+        else -> return null
+    }
+
+    if (minLux <= 0 || maxLux <= 0) return null
+
+    return when {
+        measuredLux < minLux -> ((measuredLux / minLux) * 100).roundToInt().coerceIn(0, 100)
+        measuredLux > maxLux -> ((maxLux / measuredLux) * 100).roundToInt().coerceIn(0, 100)
+        else -> 100
+    }
+}
+
 private suspend fun <T> retryOnTimeout(
     attempts: Int = 3,
     block: suspend () -> T
 ): T {
     var remaining = attempts
     var lastError: Exception? = null
+    var attemptNumber = 0
     while (remaining > 0) {
         try {
             return withContext(Dispatchers.IO) {
@@ -796,11 +994,28 @@ private suspend fun <T> retryOnTimeout(
         } catch (e: SocketTimeoutException) {
             lastError = e
             remaining--
+            attemptNumber++
             if (remaining == 0) throw e
+            Log.w("PlantRepo", "SocketTimeout, retrying... (attempt $attemptNumber)")
         } catch (e: TimeoutCancellationException) {
             lastError = SocketTimeoutException("timeout")
             remaining--
+            attemptNumber++
             if (remaining == 0) throw SocketTimeoutException("timeout")
+            Log.w("PlantRepo", "Coroutine timeout, retrying... (attempt $attemptNumber)")
+        } catch (e: HttpException) {
+            // Handle 503 Service Unavailable with exponential backoff
+            if (e.code() == 503) {
+                lastError = e
+                remaining--
+                attemptNumber++
+                if (remaining == 0) throw e
+                val delayMs = (1000L * (1 shl (attemptNumber - 1))).coerceAtMost(8000L) // 1s, 2s, 4s, max 8s
+                Log.w("PlantRepo", "HTTP 503 Service Unavailable, retrying in ${delayMs}ms... (attempt $attemptNumber)")
+                delay(delayMs)
+            } else {
+                throw e
+            }
         } catch (e: Exception) {
             throw e
         }
@@ -841,6 +1056,35 @@ private fun String.sanitizeCareText(): String =
         .filter { it.isNotBlank() }
         .joinToString("\n")
         .trim()
+
+private fun JsonObject.doubleOrNull(key: String): Double? =
+    takeIf { has(key) }?.get(key)?.let { element ->
+        if (!element.isJsonPrimitive) return null
+        runCatching { element.asDouble }.getOrElse {
+            runCatching { element.asLong.toDouble() }.getOrNull()
+        }
+    }
+
+private fun JsonObject.intOrNull(key: String): Int? =
+    takeIf { has(key) }?.get(key)?.let { element ->
+        if (!element.isJsonPrimitive) return null
+        runCatching { element.asInt }.getOrElse {
+            runCatching { element.asDouble.toInt() }.getOrNull()
+        }
+    }
+
+private fun JsonObject.recommendationsAsBullets(key: String = "recommendations"): String? {
+    if (!has(key)) return null
+    val element = get(key)
+    val joined = when {
+        element.isJsonArray -> element.asJsonArray
+            .mapNotNull { item -> if (item.isJsonPrimitive) item.asString else null }
+            .joinToString("\n")
+        element.isJsonPrimitive -> element.asString
+        else -> null
+    } ?: return null
+    return joined.sanitizeCareText().takeIf { it.isNotBlank() }
+}
 
 private fun String.indexOfNextNonWhitespace(start: Int): Int {
     var i = start
