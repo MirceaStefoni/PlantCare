@@ -43,6 +43,7 @@ fun PlantDetailScreen(
     onEdit: (String) -> Unit = {},
     onOpenCareGuide: (String) -> Unit = {},
     onOpenLightMonitor: (String) -> Unit = {},
+    onOpenHealthAnalysis: (String) -> Unit = {},
     viewModel: PlantDetailViewModel = hiltViewModel()
 ) {
     val plant by viewModel.plant.collectAsState()
@@ -242,8 +243,8 @@ fun PlantDetailScreen(
                     buttonText = "Start Analysis",
                     iconBgColor = Color(0xFFE8F5E9), // Light Green bg
                     iconTint = Color(0xFF2E7D32),
-                    badgeText = "3 checks",
-                    onClick = { /* TODO */ }
+                    badgeText = null, // Removed "3 checks" badge as requested
+                    onClick = { onOpenHealthAnalysis(p.id) } // Linked to new screen
                 )
 
                 FeatureCard(
@@ -324,6 +325,7 @@ fun FeatureCard(
                         color = Color(0xFF37474F)
                     )
                     if (badgeText != null) {
+                        // This part removed effectively by passing null, but kept logic generic
                         Surface(
                             color = Color(0xFF4CAF50),
                             shape = RoundedCornerShape(12.dp)
@@ -359,12 +361,7 @@ fun FeatureCard(
                     Button(
                         onClick = onClick,
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = Color.Transparent, // Making it outlined-ish or just text per design? 
-                            // Wait, design shows outlined for view guide? No, design shows thick black border for view guide? 
-                            // Actually "View Guide" is Black Button with White Text (or outlined thick).
-                            // "Start Analysis" is outlined green.
-                            // "Measure Light" is outlined orange.
-                            // I'll stick to what looked good or interpret the image best.
+                            containerColor = Color.Transparent,
                         ),
                         border = androidx.compose.foundation.BorderStroke(1.5.dp, Color.Black),
                         modifier = Modifier.align(Alignment.End)

@@ -107,3 +107,27 @@ data class LightMeasurementEntity(
     val last_sync_error: String? = null
 )
 
+@Entity(
+    tableName = "health_analyses",
+    indices = [Index("plant_id")],
+    foreignKeys = [ForeignKey(
+        entity = PlantEntity::class,
+        parentColumns = ["id"],
+        childColumns = ["plant_id"],
+        onDelete = ForeignKey.CASCADE
+    )]
+)
+data class HealthAnalysisEntity(
+    @PrimaryKey val id: String,
+    @ColumnInfo(name = "plant_id") val plantId: String,
+    val photo_url: String,
+    val health_status: String,
+    val health_score: Int,
+    val status_description: String,
+    val issues_json: String,
+    val recommendations_json: String,
+    val prevention_tips_json: String,
+    val analyzed_at: Long,
+    val sync_state: SyncState = SyncState.PENDING,
+    val last_sync_error: String? = null
+)

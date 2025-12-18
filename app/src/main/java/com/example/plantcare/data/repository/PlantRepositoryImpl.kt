@@ -7,7 +7,6 @@ import androidx.work.Constraints
 import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
-import androidx.work.OutOfQuotaPolicy
 import androidx.work.WorkManager
 import com.example.plantcare.data.local.CareDao
 import com.example.plantcare.data.local.CareInstructionsEntity
@@ -27,11 +26,17 @@ import com.example.plantcare.data.remote.PlantRemoteDataSource
 import com.example.plantcare.data.sync.PlantSyncWorker
 import com.example.plantcare.domain.model.CareGuideFields
 import com.example.plantcare.domain.model.CareInstructions
+import com.example.plantcare.domain.model.HealthAnalysis
+import com.example.plantcare.domain.model.HealthIssue
+import com.example.plantcare.domain.model.HealthRecommendation
+import com.example.plantcare.domain.model.HealthRecommendationsResult
+import com.example.plantcare.domain.model.HealthScoreResult
 import com.example.plantcare.domain.model.Plant
 import com.example.plantcare.domain.model.LightEnvironment
 import com.example.plantcare.domain.model.LightMeasurement
 import com.example.plantcare.domain.model.inferLightEnvironment
 import com.example.plantcare.domain.repository.PlantRepository
+import com.google.gson.JsonArray
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -83,6 +88,26 @@ class PlantRepositoryImpl(
         val entity = plant.toEntity()
         plantDao.upsertPlant(entity)
         scheduleSync()
+    }
+
+    override suspend fun addOrUpdateAndSync(plant: Plant) {
+        ensureUser(plant.userId)
+        val entity = plant.toEntity()
+        
+        // Save to local DB first
+        plantDao.upsertPlant(entity)
+        
+        // Immediately sync to Firestore (don't wait for WorkManager)
+        try {
+            remote.upsertPlant(entity)
+            // Mark as synced in local DB
+            plantDao.upsertPlant(entity.copy(sync_state = SyncState.SYNCED, last_sync_error = null))
+            Log.d("PlantRepo", "Plant saved and synced to Firestore: ${plant.id}")
+        } catch (e: Exception) {
+            Log.e("PlantRepo", "Failed to sync to Firestore, will retry via WorkManager", e)
+            // Keep as PENDING, WorkManager will retry
+            scheduleSync()
+        }
     }
 
     override suspend fun delete(plantId: String) {
@@ -348,6 +373,340 @@ class PlantRepositoryImpl(
         }.onFailure { Log.e("PlantRepo", "Failed to evaluate light for $plantId", it) }.getOrNull()
     }
 
+    // Legacy method - kept for reference but no longer used
+    private suspend fun analyzeHealthWithPhotos(
+        plantId: String,
+        plantPhotoUrl: String,
+        affectedAreaUri: String,
+        plantName: String
+    ): HealthAnalysis {
+        Log.d("PlantRepo", "Starting health analysis for $plantId")
+        
+        // Read plant photo
+        val plantPhotoBase64 = readImageAsBase64(plantPhotoUrl)
+            ?: throw Exception("Failed to read plant photo")
+        
+        // Read affected area photo
+        val affectedPhotoBase64 = readImageAsBase64(affectedAreaUri)
+            ?: throw Exception("Failed to read affected area photo")
+        
+        val prompt = """
+            You are a plant health expert. Analyze these two images of a plant called "$plantName".
+            
+            Image 1: The overall plant photo
+            Image 2: A close-up of the affected/problematic area
+            
+            Please analyze the plant's health and return a JSON object with the following structure:
+            {
+                "health_score": 0-100 (integer representing overall health, 100 being perfectly healthy),
+                "health_status": "Healthy" or "Fair" or "Poor",
+                "status_description": "Brief description of the plant's current state",
+                "issues": [
+                    {
+                        "name": "Issue name (e.g., 'Yellow Leaves', 'Root Rot', 'Spider Mites')",
+                        "severity": "Low" or "Medium" or "High",
+                        "description": "Detailed description of the issue"
+                    }
+                ],
+                "recommendations": [
+                    {
+                        "type": "Category (e.g., 'Watering', 'Light', 'Fertilizer', 'Treatment')",
+                        "title": "Short action title",
+                        "description": "Detailed recommendation"
+                    }
+                ],
+                "prevention_tips": [
+                    "Tip 1 for preventing future issues",
+                    "Tip 2 for maintaining plant health"
+                ]
+            }
+            
+            Be thorough but concise. If the plant looks healthy, still provide general care tips.
+            Return ONLY the JSON object, no additional text.
+        """.trimIndent()
+
+        try {
+            Log.d("PlantRepo", "Sending health analysis request to Gemini...")
+            val response = retryOnTimeout(attempts = 2) {
+                geminiService.generateContent(
+                    apiKey = BuildConfig.GEMINI_API_KEY,
+                    req = GenerateContentRequest(
+                        contents = listOf(
+                            Content(
+                                parts = listOf(
+                                    Part(text = prompt),
+                                    Part(
+                                        inline_data = InlineData(
+                                            mime_type = "image/jpeg",
+                                            data = plantPhotoBase64
+                                        )
+                                    ),
+                                    Part(
+                                        inline_data = InlineData(
+                                            mime_type = "image/jpeg",
+                                            data = affectedPhotoBase64
+                                        )
+                                    )
+                                )
+                            )
+                        )
+                    )
+                )
+            }
+
+            Log.d("PlantRepo", "Health analysis response received. Parsing...")
+            val text = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
+                ?: throw Exception("Empty response from Gemini")
+            Log.d("PlantRepo", "Raw health analysis response: $text")
+
+            // Extract JSON from response
+            val jsonString = text.substringAfter("```json").substringBefore("```").trim()
+                .ifEmpty { text.trim() }
+
+            val json = Gson().fromJson(jsonString, JsonObject::class.java)
+
+            // Parse issues
+            val issues = mutableListOf<HealthIssue>()
+            json.getAsJsonArray("issues")?.forEach { element ->
+                val issueObj = element.asJsonObject
+                issues.add(
+                    HealthIssue(
+                        name = issueObj.get("name")?.asString ?: "Unknown Issue",
+                        severity = issueObj.get("severity")?.asString ?: "Medium",
+                        description = issueObj.get("description")?.asString
+                    )
+                )
+            }
+
+            // Parse recommendations
+            val recommendations = mutableListOf<HealthRecommendation>()
+            json.getAsJsonArray("recommendations")?.forEach { element ->
+                val recObj = element.asJsonObject
+                recommendations.add(
+                    HealthRecommendation(
+                        type = recObj.get("type")?.asString ?: "General",
+                        title = recObj.get("title")?.asString ?: "Recommendation",
+                        description = recObj.get("description")?.asString ?: ""
+                    )
+                )
+            }
+
+            // Parse prevention tips
+            val preventionTips = mutableListOf<String>()
+            json.getAsJsonArray("prevention_tips")?.forEach { element ->
+                preventionTips.add(element.asString)
+            }
+
+            return HealthAnalysis(
+                id = UUID.randomUUID().toString(),
+                plantId = plantId,
+                photoUrl = affectedAreaUri,
+                healthStatus = json.get("health_status")?.asString ?: "Unknown",
+                healthScore = json.get("health_score")?.asInt ?: 50,
+                statusDescription = json.get("status_description")?.asString ?: "Analysis complete",
+                issues = issues,
+                recommendations = recommendations,
+                preventionTips = preventionTips,
+                analyzedAt = System.currentTimeMillis()
+            )
+        } catch (e: Exception) {
+            Log.e("PlantRepo", "Health analysis failed: ${e.message}")
+            e.printStackTrace()
+            throw e
+        }
+    }
+
+    // Chunked Health Analysis - Part 1: Health Score
+    override suspend fun analyzeHealthScore(
+        plantPhotoUrl: String,
+        affectedAreaUri: String,
+        plantName: String
+    ): HealthScoreResult {
+        Log.d("PlantRepo", "Analyzing health score for $plantName")
+        
+        val plantPhotoBase64 = readImageAsBase64(plantPhotoUrl)
+            ?: throw Exception("Failed to read plant photo")
+        val affectedPhotoBase64 = readImageAsBase64(affectedAreaUri)
+            ?: throw Exception("Failed to read affected area photo")
+        
+        val prompt = """
+            Analyze "$plantName" health. Image 1: full plant. Image 2: PROBLEM AREA user is worried about.
+            
+            Be STRICT - user shows problem area because something IS wrong. Check for: discoloration, wilting, pests, fungus, nutrient issues, water stress.
+            
+            Score: 80-100=healthy, 60-79=mild issues, 40-59=moderate, 20-39=severe, 0-19=critical.
+            
+            Return JSON only: {"health_score": 0-100, "health_status": "Healthy/Fair/Poor", "status_description": "one sentence"}
+        """.trimIndent()
+
+        val response = retryOnTimeout(attempts = 2) {
+            geminiService.generateContent(
+                apiKey = BuildConfig.GEMINI_API_KEY,
+                req = GenerateContentRequest(
+                    contents = listOf(
+                        Content(parts = listOf(
+                            Part(text = prompt),
+                            Part(inline_data = InlineData(mime_type = "image/jpeg", data = plantPhotoBase64)),
+                            Part(inline_data = InlineData(mime_type = "image/jpeg", data = affectedPhotoBase64))
+                        ))
+                    )
+                )
+            )
+        }
+
+        val text = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
+            ?: throw Exception("Empty response from Gemini")
+        val jsonString = text.substringAfter("```json").substringBefore("```").trim().ifEmpty { text.trim() }
+        val json = Gson().fromJson(jsonString, JsonObject::class.java)
+
+        return HealthScoreResult(
+            healthScore = json.get("health_score")?.asInt ?: 50,
+            healthStatus = json.get("health_status")?.asString ?: "Unknown",
+            statusDescription = json.get("status_description")?.asString ?: "Analysis complete"
+        )
+    }
+
+    // Chunked Health Analysis - Part 2: Issues
+    override suspend fun analyzeHealthIssues(
+        plantPhotoUrl: String,
+        affectedAreaUri: String,
+        plantName: String
+    ): List<HealthIssue> {
+        Log.d("PlantRepo", "Analyzing health issues for $plantName")
+        
+        val plantPhotoBase64 = readImageAsBase64(plantPhotoUrl)
+            ?: throw Exception("Failed to read plant photo")
+        val affectedPhotoBase64 = readImageAsBase64(affectedAreaUri)
+            ?: throw Exception("Failed to read affected area photo")
+        
+        val prompt = """
+            Identify issues in "$plantName". Image 1: full plant. Image 2: PROBLEM AREA.
+            
+            User IS concerned - find what's wrong. Check: leaf damage, pests, fungus, nutrient deficiency, water stress.
+            
+            Severity: Low=cosmetic, Medium=needs attention, High=serious threat.
+            
+            Return JSON only: {"issues": [{"name": "issue name", "severity": "Low/Medium/High", "description": "brief cause and what you see"}]}
+        """.trimIndent()
+
+        val response = retryOnTimeout(attempts = 2) {
+            geminiService.generateContent(
+                apiKey = BuildConfig.GEMINI_API_KEY,
+                req = GenerateContentRequest(
+                    contents = listOf(
+                        Content(parts = listOf(
+                            Part(text = prompt),
+                            Part(inline_data = InlineData(mime_type = "image/jpeg", data = plantPhotoBase64)),
+                            Part(inline_data = InlineData(mime_type = "image/jpeg", data = affectedPhotoBase64))
+                        ))
+                    )
+                )
+            )
+        }
+
+        val text = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
+            ?: throw Exception("Empty response from Gemini")
+        val jsonString = text.substringAfter("```json").substringBefore("```").trim().ifEmpty { text.trim() }
+        val json = Gson().fromJson(jsonString, JsonObject::class.java)
+
+        val issues = mutableListOf<HealthIssue>()
+        json.getAsJsonArray("issues")?.forEach { element ->
+            val obj = element.asJsonObject
+            issues.add(HealthIssue(
+                name = obj.get("name")?.asString ?: "Unknown Issue",
+                severity = obj.get("severity")?.asString ?: "Medium",
+                description = obj.get("description")?.asString
+            ))
+        }
+        return issues
+    }
+
+    // Chunked Health Analysis - Part 3: Recommendations & Prevention
+    override suspend fun analyzeHealthRecommendations(
+        plantPhotoUrl: String,
+        affectedAreaUri: String,
+        plantName: String
+    ): HealthRecommendationsResult {
+        Log.d("PlantRepo", "Analyzing recommendations for $plantName")
+        
+        val plantPhotoBase64 = readImageAsBase64(plantPhotoUrl)
+            ?: throw Exception("Failed to read plant photo")
+        val affectedPhotoBase64 = readImageAsBase64(affectedAreaUri)
+            ?: throw Exception("Failed to read affected area photo")
+        
+        val prompt = """
+            Provide treatment for "$plantName". Image 1: full plant. Image 2: PROBLEM AREA.
+            
+            Give 2-3 actionable recommendations. Types: Treatment, Watering, Light, Fertilizer, Pest Control.
+            Also give 2 prevention tips.
+            
+            Return JSON only: {"recommendations": [{"type": "category", "title": "action", "description": "brief how-to"}], "prevention_tips": ["tip1", "tip2"]}
+        """.trimIndent()
+
+        val response = retryOnTimeout(attempts = 2) {
+            geminiService.generateContent(
+                apiKey = BuildConfig.GEMINI_API_KEY,
+                req = GenerateContentRequest(
+                    contents = listOf(
+                        Content(parts = listOf(
+                            Part(text = prompt),
+                            Part(inline_data = InlineData(mime_type = "image/jpeg", data = plantPhotoBase64)),
+                            Part(inline_data = InlineData(mime_type = "image/jpeg", data = affectedPhotoBase64))
+                        ))
+                    )
+                )
+            )
+        }
+
+        val text = response.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
+            ?: throw Exception("Empty response from Gemini")
+        val jsonString = text.substringAfter("```json").substringBefore("```").trim().ifEmpty { text.trim() }
+        val json = Gson().fromJson(jsonString, JsonObject::class.java)
+
+        val recommendations = mutableListOf<HealthRecommendation>()
+        json.getAsJsonArray("recommendations")?.forEach { element ->
+            val obj = element.asJsonObject
+            recommendations.add(HealthRecommendation(
+                type = obj.get("type")?.asString ?: "General",
+                title = obj.get("title")?.asString ?: "Recommendation",
+                description = obj.get("description")?.asString ?: ""
+            ))
+        }
+
+        val preventionTips = mutableListOf<String>()
+        json.getAsJsonArray("prevention_tips")?.forEach { element ->
+            preventionTips.add(element.asString)
+        }
+
+        return HealthRecommendationsResult(
+            recommendations = recommendations,
+            preventionTips = preventionTips
+        )
+    }
+
+    private suspend fun readImageAsBase64(imageUrl: String): String? {
+        return try {
+            val bytes = if (imageUrl.startsWith("http")) {
+                withContext(Dispatchers.IO) {
+                    val request = Request.Builder().url(imageUrl).build()
+                    val response = client.newCall(request).execute()
+                    if (!response.isSuccessful) throw Exception("Failed to download image: ${response.code}")
+                    response.body?.bytes()
+                }
+            } else {
+                // Use .use{} to ensure stream is closed even if readBytes() throws
+                context.contentResolver.openInputStream(Uri.parse(imageUrl))?.use { inputStream ->
+                    inputStream.readBytes()
+                }
+            }
+            bytes?.let { Base64.encodeToString(it, Base64.NO_WRAP) }
+        } catch (e: Exception) {
+            Log.e("PlantRepo", "Error reading image: ${e.message}")
+            e.printStackTrace()
+            null
+        }
+    }
+
     // Ensures a user row exists before inserting plants tied to that user
     private suspend fun ensureUser(userId: String) {
         if (userDao.userCount(userId) == 0) {
@@ -374,7 +733,6 @@ class PlantRepositoryImpl(
                     .setRequiredNetworkType(NetworkType.CONNECTED)
                     .build()
             )
-            .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
             .build()
         workManager.enqueueUniqueWork(
             PlantSyncWorker.UNIQUE_NAME,

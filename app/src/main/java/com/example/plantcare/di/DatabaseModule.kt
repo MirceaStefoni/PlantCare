@@ -31,6 +31,5 @@ object DatabaseModule {
 
     @Provides
     fun provideLightMeasurementDao(db: AppDatabase) = db.lightMeasurementDao()
+    fun provideHealthAnalysisDao(db: AppDatabase) = db.healthAnalysisDao()
 }
-
-

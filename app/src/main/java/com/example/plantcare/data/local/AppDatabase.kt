@@ -9,9 +9,10 @@ import androidx.room.TypeConverters
         UserEntity::class,
         PlantEntity::class,
         CareInstructionsEntity::class,
-        LightMeasurementEntity::class
+        LightMeasurementEntity::class,
+        HealthAnalysisEntity::class
     ],
-    version = 6,
+    version = 7,
     exportSchema = true
 )
 @TypeConverters(SyncStateConverters::class)
@@ -20,6 +21,5 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun plantDao(): PlantDao
     abstract fun careDao(): CareDao
     abstract fun lightMeasurementDao(): LightMeasurementDao
+    abstract fun healthAnalysisDao(): HealthAnalysisDao
 }
-
-
