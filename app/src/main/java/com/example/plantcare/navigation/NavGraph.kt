@@ -26,6 +26,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.plantcare.ui.auth.AuthViewModel
 
 import com.example.plantcare.ui.detail.EditPlantScreen
+import com.example.plantcare.ui.light.LightMonitorScreen
 import com.example.plantcare.ui.detail.HealthAnalysisScreen
 import com.example.plantcare.ui.outdoor.OutdoorCheckScreen
 
@@ -39,6 +40,7 @@ object Routes {
     const val DETAIL = "detail/{plantId}"
     const val EDIT_PLANT = "edit_plant/{plantId}"
     const val CARE_GUIDE = "care_guide/{plantId}"
+    const val LIGHT_MONITOR = "light_monitor/{plantId}"
     const val HEALTH_ANALYSIS = "health_analysis/{plantId}"
     const val OUTDOOR_CHECK = "outdoor_check/{plantId}"
     const val PROFILE = "profile"
@@ -110,6 +112,7 @@ fun AppNavHost(navController: NavHostController, startDestination: String) {
                 onBack = { navController.popBackStack() },
                 onEdit = { plantId -> navController.navigate("edit_plant/$plantId") },
                 onOpenCareGuide = { plantId -> navController.navigate("care_guide/$plantId") },
+                onOpenLightMonitor = { plantId -> navController.navigate("light_monitor/$plantId") },
                 onOpenHealthAnalysis = { plantId -> navController.navigate("health_analysis/$plantId") },
                 onOpenOutdoorCheck = { plantId -> navController.navigate("outdoor_check/$plantId") }
             )
@@ -131,6 +134,12 @@ fun AppNavHost(navController: NavHostController, startDestination: String) {
             arguments = listOf(navArgument("plantId") { type = NavType.StringType })
         ) {
             CareGuideScreen(onBack = { navController.popBackStack() })
+        }
+        composable(
+            Routes.LIGHT_MONITOR,
+            arguments = listOf(navArgument("plantId") { type = NavType.StringType })
+        ) {
+            LightMonitorScreen(onBack = { navController.popBackStack() })
         }
         composable(
             Routes.HEALTH_ANALYSIS,

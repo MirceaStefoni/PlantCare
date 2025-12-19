@@ -9,6 +9,7 @@ import androidx.room.TypeConverters
         UserEntity::class,
         PlantEntity::class,
         CareInstructionsEntity::class,
+        LightMeasurementEntity::class,
         HealthAnalysisEntity::class,
         OutdoorCheckEntity::class
     ],
@@ -20,6 +21,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun userDao(): UserDao
     abstract fun plantDao(): PlantDao
     abstract fun careDao(): CareDao
+    abstract fun lightMeasurementDao(): LightMeasurementDao
     abstract fun healthAnalysisDao(): HealthAnalysisDao
     abstract fun outdoorCheckDao(): OutdoorCheckDao
 }

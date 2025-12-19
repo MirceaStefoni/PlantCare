@@ -1,7 +1,7 @@
 package com.example.plantcare.domain.repository
 
 import com.example.plantcare.domain.model.CareInstructions
-import com.example.plantcare.domain.model.HealthAnalysis
+import com.example.plantcare.domain.model.LightMeasurement
 import com.example.plantcare.domain.model.HealthIssue
 import com.example.plantcare.domain.model.HealthRecommendationsResult
 import com.example.plantcare.domain.model.HealthScoreResult
@@ -25,7 +25,16 @@ interface PlantRepository {
         focus: String
     ): Map<String, String?>
     suspend fun saveCareGuide(plantId: String, values: Map<String, String?>): CareInstructions?
-    
+
+    fun observeLightMeasurements(plantId: String): Flow<List<LightMeasurement>>
+    suspend fun getLightMeasurements(plantId: String): List<LightMeasurement>
+    suspend fun evaluateLightConditions(
+        plantId: String,
+        luxValue: Double,
+        timeOfDay: String,
+        measurementTimestamp: Long
+    ): LightMeasurement?
+
     // Health Analysis - Chunked for better UX
     suspend fun analyzeHealthScore(
         plantPhotoUrl: String,

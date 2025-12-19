@@ -42,6 +42,21 @@ data class CareInstructions(
     val fetchedAt: Long
 )
 
+data class LightMeasurement(
+    val id: String,
+    val plantId: String,
+    val luxValue: Double,
+    val assessmentLabel: String,
+    val assessmentLevel: String,
+    val idealMinLux: Double?,
+    val idealMaxLux: Double?,
+    val idealDescription: String?,
+    val adequacyPercent: Int?,
+    val recommendations: String?,
+    val timeOfDay: String?,
+    val measuredAt: Long
+)
+
 data class HealthAnalysis(
     val id: String,
     val plantId: String,

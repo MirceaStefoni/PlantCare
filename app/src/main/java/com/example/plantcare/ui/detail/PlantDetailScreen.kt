@@ -43,6 +43,7 @@ fun PlantDetailScreen(
     onBack: () -> Unit = {},
     onEdit: (String) -> Unit = {},
     onOpenCareGuide: (String) -> Unit = {},
+    onOpenLightMonitor: (String) -> Unit = {},
     onOpenHealthAnalysis: (String) -> Unit = {},
     onOpenOutdoorCheck: (String) -> Unit = {},
     viewModel: PlantDetailViewModel = hiltViewModel()
@@ -256,7 +257,7 @@ fun PlantDetailScreen(
                     iconBgColor = Color(0xFFFFF3E0), // Light Orange bg
                     iconTint = Color(0xFFFF9800),
                     isOutlinedButton = true,
-                    onClick = { /* Coming soon */ }
+                    onClick = { onOpenLightMonitor(p.id) }
                 )
 
                 FeatureCard(

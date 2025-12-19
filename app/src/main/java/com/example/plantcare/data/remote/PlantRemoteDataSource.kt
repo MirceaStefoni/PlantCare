@@ -1,6 +1,7 @@
 package com.example.plantcare.data.remote
 
 import com.example.plantcare.data.local.CareInstructionsEntity
+import com.example.plantcare.data.local.LightMeasurementEntity
 import com.example.plantcare.data.local.OutdoorCheckEntity
 import com.example.plantcare.data.local.PlantEntity
 import com.example.plantcare.data.local.SyncState
@@ -23,6 +24,9 @@ class PlantRemoteDataSource @Inject constructor(
 
     private fun careCollection(userId: String) =
         userDoc(userId).collection("care_guides")
+
+    private fun lightCollection(userId: String) =
+        userDoc(userId).collection("light_measurements")
 
     private fun outdoorChecksCollection(userId: String) =
         userDoc(userId).collection("outdoor_checks")
@@ -63,6 +67,7 @@ class PlantRemoteDataSource @Inject constructor(
 
         runCatching { careCollection(userId).document(plantId).delete().await() }
         runCatching { deleteOutdoorChecksForPlant(userId, plantId) }
+        runCatching { deleteLightMeasurementsForPlant(userId, plantId) }
 
         // Best-effort cleanup of the associated Storage folder
         val plantFolder = storage.reference.child("users/$userId/plants/$plantId")
@@ -82,6 +87,8 @@ class PlantRemoteDataSource @Inject constructor(
         runCatching {
             val outdoorDocs = outdoorChecksCollection(userId).get().await()
             outdoorDocs.documents.forEach { doc -> runCatching { doc.reference.delete().await() } }
+            val lightDocs = lightCollection(userId).get().await()
+            lightDocs.documents.forEach { doc -> runCatching { doc.reference.delete().await() } }
         }
         val rootFolder = storage.reference.child("users/$userId/plants")
         deleteStorageFolder(rootFolder)
@@ -184,6 +191,56 @@ class PlantRemoteDataSource @Inject constructor(
             sync_state = SyncState.SYNCED,
             last_sync_error = null
         )
+    }
+
+    suspend fun upsertLightMeasurement(userId: String, entity: LightMeasurementEntity) {
+        lightCollection(userId)
+            .document(entity.id)
+            .set(
+                mapOf(
+                    "plantId" to entity.plantId,
+                    "luxValue" to entity.lux_value,
+                    "assessmentLabel" to entity.assessment_label,
+                    "assessmentLevel" to entity.assessment_level,
+                    "idealMinLux" to entity.ideal_min_lux,
+                    "idealMaxLux" to entity.ideal_max_lux,
+                    "idealDescription" to entity.ideal_description,
+                    "adequacyPercent" to entity.adequacy_percent,
+                    "recommendations" to entity.recommendations,
+                    "timeOfDay" to entity.time_of_day,
+                    "measuredAt" to entity.measured_at
+                )
+            )
+            .await()
+    }
+
+    suspend fun fetchLightMeasurements(userId: String): List<LightMeasurementEntity> {
+        val snapshot = lightCollection(userId).get().await()
+        return snapshot.documents.mapNotNull { doc ->
+            val plantId = doc.getString("plantId") ?: return@mapNotNull null
+            val lux = doc.getDouble("luxValue") ?: return@mapNotNull null
+            LightMeasurementEntity(
+                id = doc.id,
+                plantId = plantId,
+                lux_value = lux,
+                assessment_label = doc.getString("assessmentLabel") ?: "Unknown",
+                assessment_level = doc.getString("assessmentLevel") ?: "unknown",
+                ideal_min_lux = doc.getDouble("idealMinLux"),
+                ideal_max_lux = doc.getDouble("idealMaxLux"),
+                ideal_description = doc.getString("idealDescription"),
+                adequacy_percent = doc.getLong("adequacyPercent")?.toInt(),
+                recommendations = doc.getString("recommendations"),
+                time_of_day = doc.getString("timeOfDay"),
+                measured_at = doc.getLong("measuredAt") ?: System.currentTimeMillis(),
+                sync_state = SyncState.SYNCED,
+                last_sync_error = null
+            )
+        }
+    }
+
+    suspend fun deleteLightMeasurementsForPlant(userId: String, plantId: String) {
+        val docs = lightCollection(userId).whereEqualTo("plantId", plantId).get().await()
+        docs.documents.forEach { doc -> runCatching { doc.reference.delete().await() } }
     }
 
     suspend fun upsertOutdoorCheck(userId: String, entity: OutdoorCheckEntity) {
