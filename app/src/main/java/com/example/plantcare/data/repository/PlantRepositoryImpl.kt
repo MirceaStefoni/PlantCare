@@ -287,7 +287,7 @@ class PlantRepositoryImpl(
 
         return try {
             val response = retryOnTimeout {
-                geminiService.generateContent(
+                geminiService.generateContentLite(
                     apiKey = BuildConfig.GEMINI_API_KEY,
                     req = GenerateContentRequest(
                         contents = listOf(Content(parts = listOf(Part(text = prompt))))
@@ -350,7 +350,7 @@ class PlantRepositoryImpl(
 
         return runCatching {
             val response = retryOnTimeout {
-                geminiService.generateContent(
+                geminiService.generateContentLite(
                     apiKey = BuildConfig.GEMINI_API_KEY,
                     req = GenerateContentRequest(
                         contents = listOf(Content(parts = listOf(Part(text = prompt))))
@@ -782,7 +782,7 @@ class PlantRepositoryImpl(
         )
 
         val gemini = retryOnTimeout {
-            geminiService.generateContent(
+            geminiService.generateContentLite(
                 apiKey = BuildConfig.GEMINI_API_KEY,
                 req = GenerateContentRequest(
                     contents = listOf(Content(parts = listOf(Part(text = prompt))))
