@@ -114,3 +114,11 @@ data class OutdoorCheck(
     val recommendations: List<String>,
     val checkedAt: Long
 )
+
+data class CityLocation(
+    val name: String,
+    val state: String?,
+    val country: String?,
+    val latitude: Double,
+    val longitude: Double
+)

@@ -1,6 +1,7 @@
 package com.example.plantcare.ui.outdoor
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -48,6 +49,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.example.plantcare.domain.model.CityLocation
 import com.example.plantcare.domain.model.OutdoorCheck
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.isGranted
@@ -114,7 +116,7 @@ fun OutdoorCheckScreen(
                         onValueChange = viewModel::setCityQuery,
                         modifier = Modifier.fillMaxWidth(),
                         label = { Text("Search city") },
-                        placeholder = { Text("e.g., Bucharest") },
+                        placeholder = { Text("e.g., Deva") },
                         leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
                         trailingIcon = {
                             if (state.cityQuery.isNotBlank()) {
@@ -133,6 +135,17 @@ fun OutdoorCheckScreen(
                         shape = RoundedCornerShape(14.dp),
                         singleLine = true
                     )
+
+                    if (state.isSearchingCities) {
+                        Text("Searching cities…", color = Color.Gray, style = MaterialTheme.typography.bodySmall)
+                    }
+
+                    if (state.citySuggestions.isNotEmpty()) {
+                        CitySuggestionsCard(
+                            suggestions = state.citySuggestions,
+                            onPick = viewModel::onCitySelected
+                        )
+                    }
 
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Button(
@@ -306,6 +319,67 @@ private fun ResultCard(check: OutdoorCheck, isRefreshing: Boolean) {
             }
         }
     }
+}
+
+@Composable
+private fun CitySuggestionsCard(
+    suggestions: List<CityLocation>,
+    onPick: (CityLocation) -> Unit
+) {
+    Card(
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFFFAFAFA)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+    ) {
+        Column(modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+            Text(
+                "Select the correct city",
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold,
+                color = ForestGreen
+            )
+            suggestions.take(5).forEachIndexed { index, city ->
+                val label = cityLabel(city)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onPick(city) }
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(label, color = Color(0xFF263238), fontWeight = FontWeight.SemiBold)
+                        Text(
+                            String.format(Locale.US, "%.4f, %.4f", city.latitude, city.longitude),
+                            color = Color.Gray,
+                            style = MaterialTheme.typography.labelSmall
+                        )
+                    }
+                    Text("Pick", color = ForestGreen, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                }
+                if (index != suggestions.take(5).lastIndex) {
+                    Spacer(Modifier.height(1.dp))
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(1.dp)
+                            .background(Color(0xFFEAEAEA))
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun cityLabel(city: CityLocation): String {
+    val parts = buildList {
+        add(city.name)
+        city.state?.takeIf { it.isNotBlank() }?.let { add(it) }
+        city.country?.takeIf { it.isNotBlank() }?.let { add(it) }
+    }
+    return parts.joinToString(", ")
 }
 
 @Composable

@@ -5,6 +5,7 @@ import com.example.plantcare.domain.model.LightMeasurement
 import com.example.plantcare.domain.model.HealthIssue
 import com.example.plantcare.domain.model.HealthRecommendationsResult
 import com.example.plantcare.domain.model.HealthScoreResult
+import com.example.plantcare.domain.model.CityLocation
 import com.example.plantcare.domain.model.OutdoorCheck
 import com.example.plantcare.domain.model.Plant
 import kotlinx.coroutines.flow.Flow
@@ -68,4 +69,9 @@ interface PlantRepository {
         plantId: String,
         cityQuery: String
     ): OutdoorCheck
+
+    suspend fun searchCityLocations(
+        query: String,
+        limit: Int = 5
+    ): List<CityLocation>
 }

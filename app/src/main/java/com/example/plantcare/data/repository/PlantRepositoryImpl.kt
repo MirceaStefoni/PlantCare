@@ -35,6 +35,7 @@ import com.example.plantcare.domain.model.HealthIssue
 import com.example.plantcare.domain.model.HealthRecommendation
 import com.example.plantcare.domain.model.HealthRecommendationsResult
 import com.example.plantcare.domain.model.HealthScoreResult
+import com.example.plantcare.domain.model.CityLocation
 import com.example.plantcare.domain.model.OutdoorCheck
 import com.example.plantcare.domain.model.Plant
 import com.example.plantcare.domain.model.LightEnvironment
@@ -722,6 +723,43 @@ class PlantRepositoryImpl(
         )
     }
 
+    override suspend fun searchCityLocations(query: String, limit: Int): List<CityLocation> {
+        val q = query.trim()
+        if (q.isBlank()) return emptyList()
+        val hits = openWeatherGeoService.directGeocode(
+            query = q,
+            limit = limit.coerceIn(1, 10),
+            apiKey = BuildConfig.OPENWEATHER_API_KEY
+        )
+
+        return hits
+            .groupBy { hit ->
+                val name = hit.name.orEmpty().trim().lowercase()
+                val state = hit.state.orEmpty().trim().lowercase()
+                val country = hit.country.orEmpty().trim().uppercase()
+                "$name|$state|$country"
+            }
+            .values
+            .mapNotNull { group ->
+                val avgLat = group.map { it.lat }.average()
+                val avgLon = group.map { it.lon }.average()
+                val best = group.minByOrNull { hit ->
+                    val dLat = hit.lat - avgLat
+                    val dLon = hit.lon - avgLon
+                    (dLat * dLat) + (dLon * dLon)
+                } ?: return@mapNotNull null
+
+                CityLocation(
+                    name = best.name ?: q,
+                    state = best.state,
+                    country = best.country,
+                    latitude = best.lat,
+                    longitude = best.lon
+                )
+            }
+            .take(limit.coerceIn(1, 10))
+    }
+
     override suspend fun runOutdoorEnvironmentCheckFromCoordinates(
         plantId: String,
         latitude: Double,
@@ -730,7 +768,6 @@ class PlantRepositoryImpl(
     ): OutdoorCheck {
         val plant = plantDao.getPlantById(plantId) ?: throw IllegalStateException("Plant not found")
 
-        // Best-effort reverse geocode so history shows a city even for GPS checks.
         val resolvedCityName = cityName ?: runCatching {
             openWeatherGeoService.reverseGeocode(
                 lat = latitude,
@@ -1311,19 +1348,36 @@ private fun String.extractValueForKey(key: String): String? {
     return builder.toString().replace("\\n", "\n")
 }
 
-private fun String.sanitizeCareText(): String =
-    trim()
-        .split(Regex("(?i)(?:\\n|\\r|n-)"))
-        .map { rawLine ->
-            val noBold = rawLine.replace("**", "").trim()
-            when {
-                noBold.isBlank() -> ""
-                else -> "- " + noBold.trimStart('-', '•', ' ', '\t')
-            }
+private fun String.sanitizeCareText(): String {
+    val cleaned = trim()
+        .replace("**", "")
+        // Handle both escaped and real newlines.
+        .replace("\\r", "\n")
+        .replace("\\n", "\n")
+        .replace("\r", "\n")
+        // Some model outputs lose the backslash and produce literal "n-" as a delimiter.
+        .replace(Regex("(?i)([.!?])n-\\s*"), "$1\n")
+        .replace(Regex("(?i)\\sn-\\s*"), "\n")
+        // Seasonal tips often come back as one paragraph like:
+        // "Spring: ... Summer: ... Autumn: ... Winter: ..."
+        // Force each season onto its own line.
+        .replace(
+            Regex("(?i)\\s*[-•]?\\s*(Spring|Summer|Autumn|Winter)\\s*:\\s*"),
+            "\n$1: "
+        )
+
+    return cleaned
+        .split(Regex("\\n+"))
+        .mapNotNull { rawLine ->
+            val line = rawLine.trim()
+            if (line.isBlank()) return@mapNotNull null
+            val noBullet = line.trimStart('-', '•', ' ', '\t')
+            if (noBullet.isBlank()) return@mapNotNull null
+            "- $noBullet"
         }
-        .filter { it.isNotBlank() }
         .joinToString("\n")
         .trim()
+}
 
 private fun JsonObject.doubleOrNull(key: String): Double? =
     takeIf { has(key) }?.get(key)?.let { element ->
