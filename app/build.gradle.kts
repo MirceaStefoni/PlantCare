@@ -30,6 +30,9 @@ android {
         val apiKey = properties.getProperty("GEMINI_API_KEY") ?: ""
         buildConfigField("String", "GEMINI_API_KEY", "\"$apiKey\"")
 
+        val openWeatherKey = properties.getProperty("OPENWEATHER_API_KEY") ?: ""
+        buildConfigField("String", "OPENWEATHER_API_KEY", "\"$openWeatherKey\"")
+
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -100,6 +103,9 @@ dependencies {
     // Coroutines
     implementation(libs.kotlinx.coroutines.android)
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.1")
+
+    // Location (Outdoor Environment Check)
+    implementation("com.google.android.gms:play-services-location:21.3.0")
 
     // Firebase Auth + Google Sign-In
     implementation(platform("com.google.firebase:firebase-bom:33.3.0"))

@@ -2,6 +2,7 @@ package com.example.plantcare.data.remote
 
 import com.example.plantcare.data.local.CareInstructionsEntity
 import com.example.plantcare.data.local.LightMeasurementEntity
+import com.example.plantcare.data.local.OutdoorCheckEntity
 import com.example.plantcare.data.local.PlantEntity
 import com.example.plantcare.data.local.SyncState
 import com.google.firebase.firestore.FirebaseFirestore
@@ -26,6 +27,9 @@ class PlantRemoteDataSource @Inject constructor(
 
     private fun lightCollection(userId: String) =
         userDoc(userId).collection("light_measurements")
+
+    private fun outdoorChecksCollection(userId: String) =
+        userDoc(userId).collection("outdoor_checks")
 
     suspend fun upsertPlant(entity: PlantEntity) {
         plantsCollection(entity.userId)
@@ -62,6 +66,7 @@ class PlantRemoteDataSource @Inject constructor(
         }
 
         runCatching { careCollection(userId).document(plantId).delete().await() }
+        runCatching { deleteOutdoorChecksForPlant(userId, plantId) }
         runCatching { deleteLightMeasurementsForPlant(userId, plantId) }
 
         // Best-effort cleanup of the associated Storage folder
@@ -80,6 +85,8 @@ class PlantRemoteDataSource @Inject constructor(
             careDocs.documents.forEach { doc -> runCatching { doc.reference.delete().await() } }
         }
         runCatching {
+            val outdoorDocs = outdoorChecksCollection(userId).get().await()
+            outdoorDocs.documents.forEach { doc -> runCatching { doc.reference.delete().await() } }
             val lightDocs = lightCollection(userId).get().await()
             lightDocs.documents.forEach { doc -> runCatching { doc.reference.delete().await() } }
         }
@@ -233,6 +240,67 @@ class PlantRemoteDataSource @Inject constructor(
 
     suspend fun deleteLightMeasurementsForPlant(userId: String, plantId: String) {
         val docs = lightCollection(userId).whereEqualTo("plantId", plantId).get().await()
+        docs.documents.forEach { doc -> runCatching { doc.reference.delete().await() } }
+    }
+
+    suspend fun upsertOutdoorCheck(userId: String, entity: OutdoorCheckEntity) {
+        outdoorChecksCollection(userId)
+            .document(entity.id)
+            .set(
+                mapOf(
+                    "plantId" to entity.plantId,
+                    "cityName" to entity.city_name,
+                    "latitude" to entity.latitude,
+                    "longitude" to entity.longitude,
+                    "tempC" to entity.temp_c,
+                    "feelsLikeC" to entity.feels_like_c,
+                    "humidityPercent" to entity.humidity_percent,
+                    "windKmh" to entity.wind_kmh,
+                    "uvIndex" to entity.uv_index,
+                    "minTempNext24hC" to entity.min_temp_next_24h_c,
+                    "weatherDescription" to entity.weather_description,
+                    "verdict" to entity.verdict,
+                    "verdictColor" to entity.verdict_color,
+                    "analysis" to entity.analysis,
+                    "warningsJson" to entity.warnings_json,
+                    "recommendationsJson" to entity.recommendations_json,
+                    "checkedAt" to entity.checked_at
+                )
+            )
+            .await()
+    }
+
+    suspend fun fetchOutdoorChecks(userId: String): List<OutdoorCheckEntity> {
+        val snapshot = outdoorChecksCollection(userId).get().await()
+        return snapshot.documents.mapNotNull { doc ->
+            val plantId = doc.getString("plantId") ?: return@mapNotNull null
+            OutdoorCheckEntity(
+                id = doc.id,
+                plantId = plantId,
+                city_name = doc.getString("cityName"),
+                latitude = doc.getDouble("latitude") ?: return@mapNotNull null,
+                longitude = doc.getDouble("longitude") ?: return@mapNotNull null,
+                temp_c = doc.getDouble("tempC") ?: 0.0,
+                feels_like_c = doc.getDouble("feelsLikeC") ?: 0.0,
+                humidity_percent = (doc.getLong("humidityPercent") ?: 0L).toInt(),
+                wind_kmh = doc.getDouble("windKmh") ?: 0.0,
+                uv_index = doc.getDouble("uvIndex"),
+                min_temp_next_24h_c = doc.getDouble("minTempNext24hC"),
+                weather_description = doc.getString("weatherDescription"),
+                verdict = doc.getString("verdict") ?: "Acceptable",
+                verdict_color = doc.getString("verdictColor") ?: "yellow",
+                analysis = doc.getString("analysis") ?: "",
+                warnings_json = doc.getString("warningsJson") ?: "[]",
+                recommendations_json = doc.getString("recommendationsJson") ?: "[]",
+                checked_at = doc.getLong("checkedAt") ?: System.currentTimeMillis(),
+                sync_state = SyncState.SYNCED,
+                last_sync_error = null
+            )
+        }
+    }
+
+    suspend fun deleteOutdoorChecksForPlant(userId: String, plantId: String) {
+        val docs = outdoorChecksCollection(userId).whereEqualTo("plantId", plantId).get().await()
         docs.documents.forEach { doc -> runCatching { doc.reference.delete().await() } }
     }
 }
