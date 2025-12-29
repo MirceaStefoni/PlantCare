@@ -10,6 +10,13 @@ interface GeminiService {
         @Query("key") apiKey: String,
         @Body req: GenerateContentRequest
     ): GenerateContentResponse
+
+    // Cheaper/faster model for text-only tasks (care guide, outdoor suitability, light monitor, etc.)
+    @POST("models/gemini-2.5-flash-lite:generateContent")
+    suspend fun generateContentLite(
+        @Query("key") apiKey: String,
+        @Body req: GenerateContentRequest
+    ): GenerateContentResponse
 }
 
 data class GenerateContentRequest(

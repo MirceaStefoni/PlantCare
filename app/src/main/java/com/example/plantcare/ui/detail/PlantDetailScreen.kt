@@ -15,6 +15,7 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.LocalHospital
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Park
 import androidx.compose.material.icons.filled.WaterDrop
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -44,6 +45,7 @@ fun PlantDetailScreen(
     onOpenCareGuide: (String) -> Unit = {},
     onOpenLightMonitor: (String) -> Unit = {},
     onOpenHealthAnalysis: (String) -> Unit = {},
+    onOpenOutdoorCheck: (String) -> Unit = {},
     viewModel: PlantDetailViewModel = hiltViewModel()
 ) {
     val plant by viewModel.plant.collectAsState()
@@ -256,6 +258,17 @@ fun PlantDetailScreen(
                     iconTint = Color(0xFFFF9800),
                     isOutlinedButton = true,
                     onClick = { onOpenLightMonitor(p.id) }
+                )
+
+                FeatureCard(
+                    icon = Icons.Filled.Park,
+                    title = "Outdoor Suitability",
+                    description = "Check if current weather is safe for this plant",
+                    buttonText = "Check Outdoor",
+                    iconBgColor = Color(0xFFE3F2FD),
+                    iconTint = Color(0xFF1976D2),
+                    isOutlinedButton = true,
+                    onClick = { onOpenOutdoorCheck(p.id) }
                 )
                 
                 Spacer(modifier = Modifier.height(40.dp))

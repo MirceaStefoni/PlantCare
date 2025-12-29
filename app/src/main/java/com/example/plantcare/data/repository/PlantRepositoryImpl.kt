@@ -10,6 +10,8 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import com.example.plantcare.data.local.CareDao
 import com.example.plantcare.data.local.CareInstructionsEntity
+import com.example.plantcare.data.local.OutdoorCheckDao
+import com.example.plantcare.data.local.OutdoorCheckEntity
 import com.example.plantcare.data.local.PlantDao
 import com.example.plantcare.data.local.PlantEntity
 import com.example.plantcare.data.local.LightMeasurementDao
@@ -23,6 +25,8 @@ import com.example.plantcare.data.remote.GeminiService
 import com.example.plantcare.data.remote.InlineData
 import com.example.plantcare.data.remote.Part
 import com.example.plantcare.data.remote.PlantRemoteDataSource
+import com.example.plantcare.data.remote.openweather.OpenWeatherGeoService
+import com.example.plantcare.data.remote.openweather.OpenWeatherService
 import com.example.plantcare.data.sync.PlantSyncWorker
 import com.example.plantcare.domain.model.CareGuideFields
 import com.example.plantcare.domain.model.CareInstructions
@@ -31,6 +35,8 @@ import com.example.plantcare.domain.model.HealthIssue
 import com.example.plantcare.domain.model.HealthRecommendation
 import com.example.plantcare.domain.model.HealthRecommendationsResult
 import com.example.plantcare.domain.model.HealthScoreResult
+import com.example.plantcare.domain.model.CityLocation
+import com.example.plantcare.domain.model.OutdoorCheck
 import com.example.plantcare.domain.model.Plant
 import com.example.plantcare.domain.model.LightEnvironment
 import com.example.plantcare.domain.model.LightMeasurement
@@ -67,9 +73,12 @@ class PlantRepositoryImpl(
     private val userDao: UserDao,
     private val careDao: CareDao,
     private val lightMeasurementDao: LightMeasurementDao,
+    private val outdoorCheckDao: OutdoorCheckDao,
     private val remote: PlantRemoteDataSource,
     private val workManager: WorkManager,
     private val geminiService: GeminiService,
+    private val openWeatherGeoService: OpenWeatherGeoService,
+    private val openWeatherService: OpenWeatherService,
     private val client: OkHttpClient,
     @ApplicationContext private val context: Context
 ) : PlantRepository {
@@ -115,6 +124,7 @@ class PlantRepositoryImpl(
         plantDao.deleteById(plantId)
         careDao.deleteByPlantId(plantId)
         lightMeasurementDao.deleteByPlantId(plantId)
+        outdoorCheckDao.deleteByPlantId(plantId)
         runCatching { entity?.let { remote.deletePlant(it.userId, plantId) } }
     }
 
@@ -133,6 +143,11 @@ class PlantRepositoryImpl(
         val remoteMeasurements = runCatching { remote.fetchLightMeasurements(userId) }.getOrElse { emptyList() }
         remoteMeasurements.forEach { measurement ->
             lightMeasurementDao.upsertMeasurement(measurement.copy(sync_state = SyncState.SYNCED, last_sync_error = null))
+        }
+
+        val remoteOutdoor = runCatching { remote.fetchOutdoorChecks(userId) }.getOrElse { emptyList() }
+        remoteOutdoor.forEach { check ->
+            outdoorCheckDao.upsertCheck(check.copy(sync_state = SyncState.SYNCED, last_sync_error = null))
         }
     }
 
@@ -273,7 +288,7 @@ class PlantRepositoryImpl(
 
         return try {
             val response = retryOnTimeout {
-                geminiService.generateContent(
+                geminiService.generateContentLite(
                     apiKey = BuildConfig.GEMINI_API_KEY,
                     req = GenerateContentRequest(
                         contents = listOf(Content(parts = listOf(Part(text = prompt))))
@@ -336,7 +351,7 @@ class PlantRepositoryImpl(
 
         return runCatching {
             val response = retryOnTimeout {
-                geminiService.generateContent(
+                geminiService.generateContentLite(
                     apiKey = BuildConfig.GEMINI_API_KEY,
                     req = GenerateContentRequest(
                         contents = listOf(Content(parts = listOf(Part(text = prompt))))
@@ -684,6 +699,177 @@ class PlantRepositoryImpl(
         )
     }
 
+    override fun observeOutdoorChecks(plantId: String) =
+        outdoorCheckDao.observeChecks(plantId).map { list -> list.map { it.toDomain() } }
+
+    override suspend fun getOutdoorChecks(plantId: String): List<OutdoorCheck> =
+        outdoorCheckDao.getChecks(plantId).map { it.toDomain() }
+
+    override suspend fun runOutdoorEnvironmentCheckFromCity(
+        plantId: String,
+        cityQuery: String
+    ): OutdoorCheck {
+        val plant = plantDao.getPlantById(plantId) ?: throw IllegalStateException("Plant not found")
+        val geo = openWeatherGeoService.directGeocode(
+            query = cityQuery.trim(),
+            limit = 1,
+            apiKey = BuildConfig.OPENWEATHER_API_KEY
+        ).firstOrNull() ?: throw IllegalStateException("City not found")
+        return runOutdoorEnvironmentCheckFromCoordinates(
+            plantId = plantId,
+            latitude = geo.lat,
+            longitude = geo.lon,
+            cityName = geo.name ?: cityQuery
+        )
+    }
+
+    override suspend fun searchCityLocations(query: String, limit: Int): List<CityLocation> {
+        val q = query.trim()
+        if (q.isBlank()) return emptyList()
+        val hits = openWeatherGeoService.directGeocode(
+            query = q,
+            limit = limit.coerceIn(1, 10),
+            apiKey = BuildConfig.OPENWEATHER_API_KEY
+        )
+
+        return hits
+            .groupBy { hit ->
+                val name = hit.name.orEmpty().trim().lowercase()
+                val state = hit.state.orEmpty().trim().lowercase()
+                val country = hit.country.orEmpty().trim().uppercase()
+                "$name|$state|$country"
+            }
+            .values
+            .mapNotNull { group ->
+                val avgLat = group.map { it.lat }.average()
+                val avgLon = group.map { it.lon }.average()
+                val best = group.minByOrNull { hit ->
+                    val dLat = hit.lat - avgLat
+                    val dLon = hit.lon - avgLon
+                    (dLat * dLat) + (dLon * dLon)
+                } ?: return@mapNotNull null
+
+                CityLocation(
+                    name = best.name ?: q,
+                    state = best.state,
+                    country = best.country,
+                    latitude = best.lat,
+                    longitude = best.lon
+                )
+            }
+            .take(limit.coerceIn(1, 10))
+    }
+
+    override suspend fun runOutdoorEnvironmentCheckFromCoordinates(
+        plantId: String,
+        latitude: Double,
+        longitude: Double,
+        cityName: String?
+    ): OutdoorCheck {
+        val plant = plantDao.getPlantById(plantId) ?: throw IllegalStateException("Plant not found")
+
+        val resolvedCityName = cityName ?: runCatching {
+            openWeatherGeoService.reverseGeocode(
+                lat = latitude,
+                lon = longitude,
+                limit = 1,
+                apiKey = BuildConfig.OPENWEATHER_API_KEY
+            ).firstOrNull()?.name
+        }.getOrNull()
+
+        val weather = retryOnTimeout {
+            openWeatherService.currentWeather(
+                lat = latitude,
+                lon = longitude,
+                apiKey = BuildConfig.OPENWEATHER_API_KEY
+            )
+        }
+        val forecast = runCatching {
+            retryOnTimeout {
+                openWeatherService.forecast5d3h(
+                    lat = latitude,
+                    lon = longitude,
+                    apiKey = BuildConfig.OPENWEATHER_API_KEY
+                )
+            }
+        }.getOrNull()
+
+        val tempC = weather.main?.temp ?: 0.0
+        val feelsC = weather.main?.feelsLike ?: tempC
+        val humidity = weather.main?.humidity ?: 0
+        val windKmh = ((weather.wind?.speed ?: 0.0) * 3.6)
+        val description = weather.weather?.firstOrNull()?.description
+        val minNext24 = forecast?.list
+            ?.mapNotNull { it.main?.tempMin }
+            ?.minOrNull()
+
+        // OpenWeather "weather" endpoints don't include UV index. Keep optional.
+        val uvIndex: Double? = null
+
+        val prompt = buildOutdoorPrompt(
+            plantName = plant.common_name,
+            cityName = resolvedCityName ?: weather.name,
+            tempC = tempC,
+            feelsLikeC = feelsC,
+            humidityPercent = humidity,
+            windKmh = windKmh,
+            uvIndex = uvIndex,
+            minTempNext24hC = minNext24,
+            weatherDescription = description
+        )
+
+        val gemini = retryOnTimeout {
+            geminiService.generateContentLite(
+                apiKey = BuildConfig.GEMINI_API_KEY,
+                req = GenerateContentRequest(
+                    contents = listOf(Content(parts = listOf(Part(text = prompt))))
+                )
+            )
+        }
+
+        val text = gemini.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
+            ?: throw IllegalStateException("Empty response from Gemini")
+        val jsonString = text.extractJsonPayload()
+
+        val parsed = parseOutdoorJson(jsonString)
+
+        val now = System.currentTimeMillis()
+        val entity = OutdoorCheckEntity(
+            id = UUID.randomUUID().toString(),
+            plantId = plantId,
+            city_name = resolvedCityName ?: weather.name,
+            latitude = latitude,
+            longitude = longitude,
+            temp_c = tempC,
+            feels_like_c = feelsC,
+            humidity_percent = humidity,
+            wind_kmh = windKmh,
+            uv_index = uvIndex,
+            min_temp_next_24h_c = minNext24,
+            weather_description = description,
+            verdict = parsed.verdict,
+            verdict_color = parsed.verdictColor,
+            analysis = parsed.analysis,
+            warnings_json = Gson().toJson(parsed.warnings),
+            recommendations_json = Gson().toJson(parsed.recommendations),
+            checked_at = now,
+            sync_state = SyncState.PENDING,
+            last_sync_error = null
+        )
+
+        outdoorCheckDao.upsertCheck(entity)
+
+        // Best-effort immediate Firestore sync; Worker will retry on failures.
+        runCatching {
+            remote.upsertOutdoorCheck(plant.userId, entity)
+            outdoorCheckDao.upsertCheck(entity.copy(sync_state = SyncState.SYNCED, last_sync_error = null))
+        }.onFailure {
+            scheduleSync()
+        }
+
+        return entity.toDomain()
+    }
+
     private suspend fun readImageAsBase64(imageUrl: String): String? {
         return try {
             val bytes = if (imageUrl.startsWith("http")) {
@@ -838,6 +1024,125 @@ private fun String.extractJsonPayload(): String =
         .substringBefore("```", this)
         .trim()
         .ifEmpty { this.trim() }
+
+private data class OutdoorParsed(
+    val verdict: String,
+    val verdictColor: String,
+    val analysis: String,
+    val warnings: List<String>,
+    val recommendations: List<String>
+)
+
+private fun buildOutdoorPrompt(
+    plantName: String,
+    cityName: String?,
+    tempC: Double,
+    feelsLikeC: Double,
+    humidityPercent: Int,
+    windKmh: Double,
+    uvIndex: Double?,
+    minTempNext24hC: Double?,
+    weatherDescription: String?
+): String {
+    val city = cityName ?: "Unknown location"
+    val uv = uvIndex?.let { String.format(java.util.Locale.US, "%.1f", it) } ?: "unknown"
+    val min24 = minTempNext24hC?.let { String.format(java.util.Locale.US, "%.1f", it) } ?: "unknown"
+    val desc = weatherDescription ?: "unknown"
+    return """
+        Act as an expert botanist. Evaluate if the current outdoor weather conditions in $city are suitable for the plant: $plantName.
+
+        Weather Data provided:
+        - Current Temp: ${String.format(java.util.Locale.US, "%.1f", tempC)}°C (Feels like: ${String.format(java.util.Locale.US, "%.1f", feelsLikeC)}°C)
+        - Humidity: $humidityPercent%
+        - Wind Speed: ${String.format(java.util.Locale.US, "%.1f", windKmh)} km/h
+        - UV Index: $uv
+        - Forecast Low next 24h: $min24°C
+        - Weather Description: $desc
+
+        Output rules:
+        - Be concise and user-facing.
+        - analysis MUST be 1-2 sentences, max 240 characters.
+        - warnings: 0-3 items, each <= 16 words.
+        - recommendations: 2-3 items, each <= 18 words.
+
+        Return STRICT JSON only (no markdown, no extra keys, no code fences):
+        {
+          "verdict": "Ideal|Acceptable|Risky|Dangerous",
+          "verdict_color": "green|yellow|red",
+          "analysis": "string",
+          "warnings": ["string"],
+          "recommendations": ["string"]
+        }
+    """.trimIndent()
+}
+
+private fun parseOutdoorJson(raw: String): OutdoorParsed {
+    val cleaned = raw.trim()
+    return runCatching {
+        val json = Gson().fromJson(cleaned, JsonObject::class.java)
+        val verdict = json.get("verdict")?.asString ?: "Acceptable"
+        val color = json.get("verdict_color")?.asString ?: "yellow"
+        val analysis = json.get("analysis")?.asString.orEmpty().shortenAnalysis()
+        val warnings = json.getAsJsonArray("warnings")?.mapNotNull { it.asString } ?: emptyList()
+        val recs = json.getAsJsonArray("recommendations")?.mapNotNull { it.asString } ?: emptyList()
+        OutdoorParsed(verdict, color, analysis, warnings, recs)
+    }.getOrElse {
+        // Fallback: attempt to salvage minimal info if Gemini produced malformed JSON.
+        val fallbackVerdict = Regex("\"verdict\"\\s*:\\s*\"([^\"]+)\"").find(cleaned)?.groupValues?.getOrNull(1) ?: "Acceptable"
+        val fallbackColor = Regex("\"verdict_color\"\\s*:\\s*\"([^\"]+)\"").find(cleaned)?.groupValues?.getOrNull(1) ?: "yellow"
+        val fallbackAnalysis = Regex("\"analysis\"\\s*:\\s*\"([\\s\\S]*?)\"\\s*(,|})")
+            .find(cleaned)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.replace("\\n", "\n")
+            .orEmpty()
+            .shortenAnalysis()
+        OutdoorParsed(
+            verdict = fallbackVerdict,
+            verdictColor = fallbackColor,
+            analysis = fallbackAnalysis,
+            warnings = emptyList(),
+            recommendations = emptyList()
+        )
+    }
+}
+
+private fun String.shortenAnalysis(maxChars: Int = 240): String {
+    val oneLine = this
+        .replace("\r", "\n")
+        .replace("\n", " ")
+        .replace(Regex("\\s+"), " ")
+        .trim()
+    if (oneLine.length <= maxChars) return oneLine
+    val slice = oneLine.take(maxChars)
+    val lastPeriod = slice.lastIndexOf('.')
+    return if (lastPeriod >= 40) slice.take(lastPeriod + 1).trim() else (slice.trimEnd() + "…")
+}
+
+private fun OutdoorCheckEntity.toDomain(): OutdoorCheck {
+    val warnings = runCatching { Gson().fromJson(warnings_json, Array<String>::class.java)?.toList() }.getOrNull() ?: emptyList()
+    val recs = runCatching { Gson().fromJson(recommendations_json, Array<String>::class.java)?.toList() }.getOrNull() ?: emptyList()
+    return OutdoorCheck(
+        id = id,
+        plantId = plantId,
+        cityName = city_name,
+        latitude = latitude,
+        longitude = longitude,
+        tempC = temp_c,
+        feelsLikeC = feels_like_c,
+        humidityPercent = humidity_percent,
+        windKmh = wind_kmh,
+        uvIndex = uv_index,
+        minTempNext24hC = min_temp_next_24h_c,
+        weatherDescription = weather_description,
+        verdict = verdict,
+        verdictColor = verdict_color,
+        analysis = analysis,
+        warnings = warnings,
+        recommendations = recs,
+        checkedAt = checked_at
+    )
+}
 
 private fun JsonObject.stringOrNull(key: String): String? =
     takeIf { has(key) && !get(key).isJsonNull }?.get(key)?.asString
@@ -1043,19 +1348,36 @@ private fun String.extractValueForKey(key: String): String? {
     return builder.toString().replace("\\n", "\n")
 }
 
-private fun String.sanitizeCareText(): String =
-    trim()
-        .split(Regex("(?i)(?:\\n|\\r|n-)"))
-        .map { rawLine ->
-            val noBold = rawLine.replace("**", "").trim()
-            when {
-                noBold.isBlank() -> ""
-                else -> "- " + noBold.trimStart('-', '•', ' ', '\t')
-            }
+private fun String.sanitizeCareText(): String {
+    val cleaned = trim()
+        .replace("**", "")
+        // Handle both escaped and real newlines.
+        .replace("\\r", "\n")
+        .replace("\\n", "\n")
+        .replace("\r", "\n")
+        // Some model outputs lose the backslash and produce literal "n-" as a delimiter.
+        .replace(Regex("(?i)([.!?])n-\\s*"), "$1\n")
+        .replace(Regex("(?i)\\sn-\\s*"), "\n")
+        // Seasonal tips often come back as one paragraph like:
+        // "Spring: ... Summer: ... Autumn: ... Winter: ..."
+        // Force each season onto its own line.
+        .replace(
+            Regex("(?i)\\s*[-•]?\\s*(Spring|Summer|Autumn|Winter)\\s*:\\s*"),
+            "\n$1: "
+        )
+
+    return cleaned
+        .split(Regex("\\n+"))
+        .mapNotNull { rawLine ->
+            val line = rawLine.trim()
+            if (line.isBlank()) return@mapNotNull null
+            val noBullet = line.trimStart('-', '•', ' ', '\t')
+            if (noBullet.isBlank()) return@mapNotNull null
+            "- $noBullet"
         }
-        .filter { it.isNotBlank() }
         .joinToString("\n")
         .trim()
+}
 
 private fun JsonObject.doubleOrNull(key: String): Double? =
     takeIf { has(key) }?.get(key)?.let { element ->

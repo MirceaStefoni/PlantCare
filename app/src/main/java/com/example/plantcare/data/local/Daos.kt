@@ -102,3 +102,27 @@ interface HealthAnalysisDao {
     @Query("DELETE FROM health_analyses WHERE plant_id = :plantId")
     suspend fun deleteByPlantId(plantId: String)
 }
+
+@Dao
+interface OutdoorCheckDao {
+    @Query("SELECT * FROM outdoor_checks WHERE plant_id = :plantId ORDER BY checked_at DESC")
+    fun observeChecks(plantId: String): Flow<List<OutdoorCheckEntity>>
+
+    @Query("SELECT * FROM outdoor_checks WHERE plant_id = :plantId ORDER BY checked_at DESC")
+    suspend fun getChecks(plantId: String): List<OutdoorCheckEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertCheck(check: OutdoorCheckEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertChecks(checks: List<OutdoorCheckEntity>)
+
+    @Query("DELETE FROM outdoor_checks WHERE plant_id = :plantId")
+    suspend fun deleteByPlantId(plantId: String)
+
+    @Query("SELECT * FROM outdoor_checks WHERE sync_state = 'PENDING'")
+    suspend fun getPendingChecks(): List<OutdoorCheckEntity>
+
+    @Query("UPDATE outdoor_checks SET sync_state = :state, last_sync_error = :error WHERE id = :id")
+    suspend fun updateSyncState(id: String, state: SyncState, error: String?)
+}

@@ -10,7 +10,8 @@ import androidx.room.TypeConverters
         PlantEntity::class,
         CareInstructionsEntity::class,
         LightMeasurementEntity::class,
-        HealthAnalysisEntity::class
+        HealthAnalysisEntity::class,
+        OutdoorCheckEntity::class
     ],
     version = 7,
     exportSchema = true
@@ -22,4 +23,5 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun careDao(): CareDao
     abstract fun lightMeasurementDao(): LightMeasurementDao
     abstract fun healthAnalysisDao(): HealthAnalysisDao
+    abstract fun outdoorCheckDao(): OutdoorCheckDao
 }
